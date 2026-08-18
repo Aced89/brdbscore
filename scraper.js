@@ -55,17 +55,17 @@ export default {
       
       const postsResult = await env.DB.prepare(`
         INSERT OR REPLACE INTO daily_aggregates (uid, date, posts_count, updated_at)
-        SELECT uid, DATE(timestamp), COUNT(*), unixepoch()*1000
+        SELECT uid, DATE(collected_at), COUNT(*), unixepoch()*1000
         FROM post_events
         WHERE collected_at > ?
-        GROUP BY uid, DATE(timestamp)
+        GROUP BY uid, DATE(collected_at)
       `).bind(cutoff).run();
       
       const receivedResult = await env.DB.prepare(`
         UPDATE daily_aggregates SET merit_received = (
           SELECT COALESCE(SUM(amount), 0) FROM merit_events 
           WHERE to_uid = daily_aggregates.uid 
-          AND collected_at > ?
+          AND collected_at > ? AND DATE(collected_at) = daily_aggregates.date
         ), updated_at = unixepoch()*1000
         WHERE date = ?
       `).bind(cutoff, today).run();
@@ -74,7 +74,7 @@ export default {
         UPDATE daily_aggregates SET merit_sent = (
           SELECT COALESCE(SUM(amount), 0) FROM merit_events 
           WHERE from_uid = daily_aggregates.uid 
-          AND collected_at > ?
+          AND collected_at > ? AND DATE(collected_at) = daily_aggregates.date
         ), updated_at = unixepoch()*1000
         WHERE date = ?
       `).bind(cutoff, today).run();
@@ -190,9 +190,14 @@ async function scrapeMerits(uid, BTT_COOKIE, db) {
   const recv120 = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE to_uid = ? AND collected_at > ?').bind(uid, cutoff).first();
   const sent120 = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE from_uid = ? AND collected_at > ?').bind(uid, cutoff).first();
   
-  await db.prepare(
-    'UPDATE user_profiles SET merit_received_120d = ?, merit_sent_120d = ?, updated_at = ? WHERE uid = ?'
-  ).bind(recv120.total, sent120.total, Date.now(), uid).run();
+  await db.prepare(`
+    UPDATE user_profiles 
+    SET merit_received_120d = ?, 
+        merit_sent_120d = ?, 
+        posts_120d = COALESCE(posts_120d, 0),
+        updated_at = ? 
+    WHERE uid = ?
+  `).bind(recv120.total, sent120.total, Date.now(), uid).run();
   
   return Response.json({ ok: true, received_saved: rSaved, sent_saved: sSaved, skipped });
 }
