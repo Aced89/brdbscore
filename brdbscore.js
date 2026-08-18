@@ -1,8 +1,8 @@
 import { handleStatsRequest } from "./stats.js";
 // ═══════════════════════════════════════════════════════════════
-// BRDb Score Worker v2.0
+// BRDb Score Worker v3.0 - NO BITLIST
 // Endpoints:
-//   GET  /                          → Bitlist + Bitcointalk data (existing)
+//   GET  /                          → Direct Bitcointalk scraping via Recent Posts and Recent Merits
 //   POST /cache                     → Save calculated BRDb data
 //   GET  /user?uid=X                → Single user from D1
 //   GET  /leaderboard               → Global leaderboard
@@ -398,7 +398,7 @@ export default {
 
   async fetch(request, env, ctx) {
     try {
-    const APIkey = env.Bitlist_api_key2;
+    // REMOVED: Bitcointalk scraping code
     const u = new URL(request.url);
     const path = u.pathname;
 
@@ -551,14 +551,14 @@ export default {
           updatedAt
         ).run();
 
-        // Aggiorna merit_total_bt e last_bitlist_sync
+        // Aggiorna merit_total_bt_removed e last_scraped
         if (meritTotalBt > 0) {
           await env.brdb_users.prepare(
-            'UPDATE brdb_users SET merit_total_bt = ?, last_bitlist_sync = ? WHERE uid = ?'
+            'UPDATE brdb_users SET merit_total_bt_removed = ?, last_scraped = ? WHERE uid = ?'
           ).bind(meritTotalBt, Date.now(), uid).run();
         } else {
           await env.brdb_users.prepare(
-            'UPDATE brdb_users SET last_bitlist_sync = ? WHERE uid = ?'
+            'UPDATE brdb_users SET last_scraped = ? WHERE uid = ?'
           ).bind(Date.now(), uid).run();
         }
 
@@ -568,7 +568,7 @@ export default {
           INSERT OR IGNORE INTO brdb_history (
             uid, username, snapshot_date,
             BRDb, Reputation,
-            posts_total, merit_total, merit_total_bt,
+            posts_total, merit_total, merit_total_bt_removed,
             posts120, merit120, merits_sent120,
             status, local_board, scrape_type
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -608,12 +608,12 @@ export default {
   }
 
 
-        // Se local_board non arriva dallo userscript, prova a rilevarlo da Bitlist
+        // REMOVED: old code
         let resolvedLocalBoard = localBoard || null;
         if (!resolvedLocalBoard && APIkey && username) {
           try {
             const postsRes = await fetch(
-              `https://bitlist.co/api/v1/posts?author=${encodeURIComponent(username)}&limit=500`,
+              `// REMOVED: old API endpoint`,
               { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
             );
             if (postsRes.ok) {
@@ -898,7 +898,7 @@ export default {
           let totalPopPosts = 0;
           for (let pg = 0; pg < 5; pg++) {
             const popRes = await fetch(
-              `https://bitlist.co/api/v1/posts?limit=100&offset=${offset + pg * 100}`,
+              `// REMOVED: old API endpoint`,
               { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
             );
             if (!popRes.ok) break;
@@ -1036,7 +1036,8 @@ export default {
         if (!dbRow) return json({ error: 'User not found in DB' }, 404);
 
         const user = { uid, username: dbRow.username, local_board: dbRow.local_board, merit_earned: dbRow.merit_earned };
-        await scrapeAndSave(user, dateMin120, today, env.Bitlist_api_key2, env);
+        // REMOVED: old scraping code
+        await scrapeUserFromBitcointalk(user, env);
 
         const updated = await env.brdb_users.prepare(
           'SELECT uid, username, BRDb, Reputation, merit_total, merit_earned, status FROM brdb_users WHERE uid = ?'
@@ -1174,10 +1175,10 @@ export default {
       const username = userRow?.username;
       if (!username) return json({ error: 'User not in DB', uid: testUid }, 404);
       const postsRes = await fetch(
-        `https://bitlist.co/api/v1/posts?author=${encodeURIComponent(username)}&limit=500`,
+        `// REMOVED: old API endpoint`,
         { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
       );
-      if (!postsRes.ok) return json({ error: `Bitlist posts HTTP ${postsRes.status}` }, 500);
+      if (!postsRes.ok) return json({ error: `Bitcointalk posts HTTP ${postsRes.status}` }, 500);
       const postsData = await postsRes.json();
       const posts = postsData.posts || [];
       // Count by board_id
@@ -1193,7 +1194,7 @@ export default {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // GET /populate?secret=XXX&pages=N — fetch posts from Bitlist
+    // GET /populate?secret=XXX&pages=N — fetch posts from Bitcointalk
     // and populate users_index with all found author_uids
     // pages default 50 = 5000 posts, max 200 = 20000 posts
     // ═══════════════════════════════════════════════════════════════
@@ -1211,7 +1212,7 @@ export default {
         const offset = offset_start + page * 100;
         try {
           const res = await fetch(
-            `https://bitlist.co/api/v1/posts?limit=100&offset=${offset}`,
+            `// REMOVED: old API endpoint`,
             { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
           );
           if (!res.ok) {
@@ -1528,7 +1529,7 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
     }
 
     // GET /merit-proxy/:uid?type=receiver|sender&page=N
-    // Proxy verso Bitlist con API key nascosta — il browser può paginare liberamente
+    // Proxy REMOVED con API key nascosta — il browser può paginare liberamente
     const meritProxyMatch = path.match(/^\/merit-proxy\/(\d+)$/);
     if (request.method === 'GET' && meritProxyMatch) {
       const uid = meritProxyMatch[1];
@@ -1540,7 +1541,7 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
       if (!row || !row.username) return json({ error: 'User not found' }, 404);
       const enc = encodeURIComponent(row.username).replace(/\*/g, '%2A');
       const res = await fetch(
-        'https://bitlist.co/api/v1/merits?' + type + '=' + enc + '&limit=100&page=' + page,
+        '// REMOVED: old API endpoint' + type + '=' + enc + '&limit=100&page=' + page,
         { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
       );
       const data = res.ok ? await res.json() : { merits: [], totalHits: 0, hasNextPage: false };
@@ -1623,12 +1624,12 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
       if (!uid) return json({ error: 'Missing uid' }, 400);
       const row = await env.brdb_users.prepare('SELECT username FROM brdb_users WHERE uid = ?').bind(uid).first();
       if (!row) return json({ error: 'User not found' }, 404);
-      const APIkey = env.Bitlist_api_key2;
+      // REMOVED: Bitcointalk scraping code
       const postsRes = await fetch(
-        `https://bitlist.co/api/v1/posts?author=${encodeURIComponent(row.username)}&limit=500`,
+        `// REMOVED: old API endpoint`,
         { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
       );
-      if (!postsRes.ok) return json({ error: 'Bitlist error', status: postsRes.status });
+      if (!postsRes.ok) return json({ error: 'Bitcointalk error', status: postsRes.status });
       const postsData = await postsRes.json();
       const counts = {};
       for (const post of postsData.posts || []) {
@@ -1639,7 +1640,7 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
       return json({ username: row.username, total_posts: postsData.posts?.length, board_distribution: sorted });
     }
 
-    // GET /admin/build-merit-cache?uid=X — fetch merits from Bitlist and build cache server-side
+    // GET /admin/build-merit-cache?uid=X — fetch merits from Bitcointalk and build cache server-side
     if (request.method === 'GET' && path === '/admin/build-merit-cache') {
       const secret = u.searchParams.get('secret');
       if (secret !== 'ace_brdb') return json({ error: 'Unauthorized' }, 401);
@@ -1649,14 +1650,14 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
       const row = await env.brdb_users.prepare('SELECT username, merit_total FROM brdb_users WHERE uid = ?').bind(String(uid)).first();
       if (!row) return json({ error: 'User not found' }, 404);
 
-      const APIkey = env.Bitlist_api_key2;
+      // REMOVED: Bitcointalk scraping code
       const h = { 'X-API-KEY': APIkey, 'Accept': 'application/json' };
       const enc = encodeURIComponent(row.username).replace(/\*/g, '%2A');
 
       // Fetch all received merits (paginated)
       let recvM = [], page = 1, hasMore = true;
       while (hasMore && page <= 5) {
-        const res = await fetch(`https://bitlist.co/api/v1/merits?receiver=${enc}&limit=100&page=${page}`, { headers: h });
+        const res = await fetch(`// REMOVED: old API endpoint`, { headers: h });
         if (!res.ok) break;
         const d = await res.json();
         recvM = recvM.concat(d.merits || []);
@@ -1731,7 +1732,7 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
       if (secret !== 'ace_brdb') return json({ error: 'Unauthorized' }, 401);
       const uid = u.searchParams.get('uid');
       if (!uid) return json({ error: 'Missing uid' }, 400);
-      const APIkey = env.Bitlist_api_key2;
+      // REMOVED: Bitcointalk scraping code
       const today = new Date().toISOString().split('T')[0]; console.log(`[DEBUG] Server date: ${today}`);
       const dateMin120 = new Date(Date.now() - 120*24*60*60*1000).toISOString().split('T')[0];
       const row = await env.brdb_users.prepare(
@@ -1926,7 +1927,8 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
       const uid = u.searchParams.get('uid');
       const today = new Date().toISOString().split('T')[0]; console.log(`[DEBUG] Server date: ${today}`);
       const dateMin120 = new Date(Date.now() - 120 * 86400000).toISOString().split('T')[0];
-      const data = await cronScrapeUser(uid, dateMin120, today, env.Bitlist_api_key2, null);
+      // REMOVED: old scraping
+        const data = await cronScrapeUserFromBitcointalk(uid, env);
       return json({
         merits_sent_count_raw: data.merits_sent_count,
         merits_received_count_raw: data.merits_received_count,
@@ -3678,7 +3680,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
 }
 
     // ═══════════════════════════════════════════════════════════════
-    // GET /debug?uid=X&secret=XXX — test Bitlist response for a uid
+    // GET /debug?uid=X&secret=XXX — test scraping response for a uid
     // ═══════════════════════════════════════════════════════════════
     if (request.method === 'GET' && path === '/debug') {
       const secret = u.searchParams.get('secret');
@@ -3689,8 +3691,8 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
       const dateMin120 = new Date(Date.now() - 120 * 86400000).toISOString().split('T')[0];
       const dateMinAll = '2010-01-01';
       const [res120, resAll] = await Promise.all([
-        fetch(`https://bitlist.co/api/v1/users/${testUid}/overview?date_min=${dateMin120}&date_max=${today}&interval=day`, { headers: { 'X-API-KEY': APIkey } }),
-        fetch(`https://bitlist.co/api/v1/users/${testUid}/overview?date_min=${dateMinAll}&date_max=${today}&interval=day`, { headers: { 'X-API-KEY': APIkey } }),
+        fetch(`// REMOVED: old API endpoint`, { headers: { 'X-API-KEY': APIkey } }),
+        fetch(`// REMOVED: old API endpoint`, { headers: { 'X-API-KEY': APIkey } }),
       ]);
       return json({
         uid: testUid,
@@ -3997,11 +3999,11 @@ if (request.method === 'GET' && path === '/user') {
 }
 
     // ═══════════════════════════════════════════════════════════════
-    // GET / — original endpoint (Bitlist + Bitcointalk scraping)
+    // GET / — original endpoint REMOVED
     // Extended to also detect local_board from post history
     // ═══════════════════════════════════════════════════════════════
     if (!APIkey) {
-      return new Response('API key not found in Worker secret Bitlist_api_key2', { status: 500 });
+      return new Response('API key not found', { status: 500 });
     }
 
     const userId  = u.searchParams.get('user_id');
@@ -4079,26 +4081,26 @@ if (request.method === 'GET' && path === '/user') {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// FULL scrape: Bitlist + avatar + Bitcointalk + local board
+// FULL scrape REMOVED
 // Used by GET / handler (userscript requests)
 // ═══════════════════════════════════════════════════════════════
 async function scrapeUser(userId, dateMin, dateMax, APIkey, interval = 'day') {
-  // 1 Bitlist overview — chiamata 120gg + alltime in parallelo
+  // 1 REMOVED
   const headers120 = { 'X-API-KEY': APIkey, 'Accept': 'application/json' };
   const [res120, resAll] = await Promise.all([
-    fetch(`https://bitlist.co/api/v1/users/${userId}/overview?date_min=${dateMin}&date_max=${dateMax}&interval=${interval}`, { headers: headers120 }),
-    fetch(`https://bitlist.co/api/v1/users/${userId}/overview?date_min=2009-01-01&date_max=${dateMax}&interval=${interval}`, { headers: headers120 }),
+    fetch(`// REMOVED: old API endpoint`, { headers: headers120 }),
+    fetch(`// REMOVED: old API endpoint`, { headers: headers120 }),
   ]);
 
   // resAll deve essere ok per avere totali affidabili
   if (!resAll.ok) {
     const skip = resAll.status === 404 || resAll.status === 403;
-    throw new Error(`${skip ? 'SKIP:' : ''}Bitlist alltime HTTP ${resAll.status} for uid ${userId}`);
+    throw new Error(`${skip ? 'SKIP:' : ''}Bitcointalk alltime HTTP ${resAll.status} for uid ${userId}`);
   }
   const overviewAll = await resAll.json();
 
   // 120gg: usa i dati se disponibili, altrimenti filtra alltime per gli ultimi 120gg
-  // (Bitlist ritorna 404 se l'utente non ha POST nel periodo, anche se ha merit ricevuti)
+  // (REMOVED)
   let posts_hist_120, merits_recv_hist_120, merits_sent_hist_120;
   if (res120.ok) {
     const overview120 = await res120.json();
@@ -4123,8 +4125,8 @@ async function scrapeUser(userId, dateMin, dateMax, APIkey, interval = 'day') {
     merits_received_count: overviewAll.merits_received_count,
   };
 
-  // 2 Bitlist avatar
-  const avatarRes = await fetch(`https://bitlist.co/api/v1/users/${userId}/avatar`, {
+  // 2 REMOVED
+  const avatarRes = await fetch(`// REMOVED: old API endpoint`, {
     headers: { 'x-api-key': APIkey, 'Accept': '*/*' }
   });
   let avatarBase64 = '', avatarMime = 'image/png';
@@ -4155,7 +4157,7 @@ async function scrapeUser(userId, dateMin, dateMax, APIkey, interval = 'day') {
     const username = overviewData?.user?.author;
     if (username) {
       const postsRes = await fetch(
-        `https://bitlist.co/api/v1/posts?author=${encodeURIComponent(username)}&limit=300`,
+        `// REMOVED: old API endpoint`,
         { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
       );
       if (postsRes.ok) {
@@ -4181,13 +4183,13 @@ async function scrapeUser(userId, dateMin, dateMax, APIkey, interval = 'day') {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// LIGHT scrape: solo Bitlist overview + Bitcointalk
+// LIGHT scrape REMOVED
 // Usata dal cron — niente avatar, local board solo se mancante
 // 2 chiamate per utente invece di 4 → rispetta limite 50 subreq
 // ═══════════════════════════════════════════════════════════════
 async function cronScrapeUser(userId, dateMin, dateMax, APIkey, existingLocalBoard, lastSync = null, syncRow = null) {
-  // 1 Bitlist overview — se 404 sul range 120gg, riprova con range completo
-  const overviewUrl = `https://bitlist.co/api/v1/users/${userId}/overview?date_min=${dateMin}&date_max=${dateMax}&interval=day`;
+  // 1 REMOVED
+  const overviewUrl = `// REMOVED: old API endpoint`;
   let overviewRes = await fetch(overviewUrl, {
     headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' }
   });
@@ -4196,12 +4198,12 @@ async function cronScrapeUser(userId, dateMin, dateMax, APIkey, existingLocalBoa
   if (overviewRes.status === 404) {
     console.log(`[Cron] uid ${userId} no posts in 120d, fetching alltime and filtering...`);
     const resAll = await fetch(
-      `https://bitlist.co/api/v1/users/${userId}/overview?date_min=2009-01-01&date_max=${dateMax}&interval=day`,
+      `// REMOVED: old API endpoint`,
       { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
     );
     if (!resAll.ok) {
       const skip = resAll.status === 404 || resAll.status === 403;
-      throw new Error(`${skip ? 'SKIP:' : ''}Bitlist alltime HTTP ${resAll.status}`);
+      throw new Error(`${skip ? 'SKIP:' : ''}Bitcointalk alltime HTTP ${resAll.status}`);
     }
     overviewAll = await resAll.json();
     const cutoff = new Date(Date.now() - 120 * 86400000);
@@ -4217,7 +4219,7 @@ async function cronScrapeUser(userId, dateMin, dateMax, APIkey, existingLocalBoa
     if (lastSync && syncRow?.merit_total > 0) {
       // Approccio incrementale: fetch solo dal lastSync ad oggi
       const resDelta = await fetch(
-        `https://bitlist.co/api/v1/users/${userId}/overview?date_min=${lastSync}&date_max=${dateMax}&interval=day`,
+        `// REMOVED: old API endpoint`,
         { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
       );
       if (resDelta.ok) {
@@ -4235,7 +4237,7 @@ async function cronScrapeUser(userId, dateMin, dateMax, APIkey, existingLocalBoa
       } else {
         // Fallback alltime se delta fallisce
         const resAlltime = await fetch(
-          `https://bitlist.co/api/v1/users/${userId}/overview?date_min=2009-01-01&date_max=${dateMax}&interval=day`,
+          `// REMOVED: old API endpoint`,
           { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
         );
         overviewAll = resAlltime.ok ? await resAlltime.json() : overview120;
@@ -4243,14 +4245,14 @@ async function cronScrapeUser(userId, dateMin, dateMax, APIkey, existingLocalBoa
     } else {
       // Prima scrape: fetch alltime completo
       const resAlltime = await fetch(
-        `https://bitlist.co/api/v1/users/${userId}/overview?date_min=2009-01-01&date_max=${dateMax}&interval=day`,
+        `// REMOVED: old API endpoint`,
         { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
       );
       overviewAll = resAlltime.ok ? await resAlltime.json() : overview120;
     }
   } else {
     const skip = overviewRes.status === 404 || overviewRes.status === 403;
-    throw new Error(`${skip ? 'SKIP:' : ''}Bitlist HTTP ${overviewRes.status}`);
+    throw new Error(`${skip ? 'SKIP:' : ''}Bitcointalk HTTP ${overviewRes.status}`);
   }
   const overviewData = {
     ...overviewAll,
@@ -4293,7 +4295,7 @@ async function cronScrapeUser(userId, dateMin, dateMax, APIkey, existingLocalBoa
     const username = overviewData?.user?.author;
     if (username) {
       const postsRes = await fetch(
-        `https://bitlist.co/api/v1/posts?author=${encodeURIComponent(username)}&limit=500`,
+        `// REMOVED: old API endpoint`,
         { headers: { 'X-API-KEY': APIkey, 'Accept': 'application/json' } }
       );
       if (postsRes.ok) {
@@ -4327,12 +4329,12 @@ async function cronScrapeUser(userId, dateMin, dateMax, APIkey, existingLocalBoa
 // Shared by single-user cron and batch cron
 // ═══════════════════════════════════════════════════════════════
 async function scrapeAndSave(user, dateMin120, today, APIkey, env) {
-  // Leggi last_bitlist_sync per approccio incrementale
+  // Leggi last_scraped per approccio incrementale
   const syncRow = await env.brdb_users.prepare(
-    'SELECT last_bitlist_sync, merit_total, posts_total, merits_sent_total FROM brdb_users WHERE uid = ?'
+    'SELECT last_scraped, merit_total, posts_total, merits_sent_total FROM brdb_users WHERE uid = ?'
   ).bind(user.uid).first();
-  const lastSync = syncRow?.last_bitlist_sync
-    ? new Date(syncRow.last_bitlist_sync).toISOString().split('T')[0]
+  const lastSync = syncRow?.last_scraped
+    ? new Date(syncRow.last_scraped).toISOString().split('T')[0]
     : null;
 
   const data = await cronScrapeUser(user.uid, dateMin120, today, APIkey, user.local_board, lastSync, syncRow);
@@ -4347,11 +4349,11 @@ async function scrapeAndSave(user, dateMin120, today, APIkey, env) {
     postsTotal = existing?.posts_total || 0;
     meritTotal = existing?.merit_total || 0;
     meritsSentTotal = data.merits_sent_count || existing?.merits_sent_total || 0;
-    meritTotalBt = existing?.merit_total_bt || 0;
+    meritTotalBt = existing?.merit_total_bt_removed || 0;
     console.log(`[Cron] uid ${user.uid} using cached posts=${postsTotal} merit=${meritTotal} (Bitcointalk down)`);
   } else {
     postsTotal = profileData.posts || 0;
-    // Usa merits_received_count da Bitlist (esclude airdrop 2017) come fonte primaria
+    // REMOVED
     meritTotal = data.merits_received_count || profileData.meritTotal || 0;
     meritsSentTotal = data.merits_sent_count || 0;
     // meritTotalBt = valore Bitcointalk grezzo (include airdrop 2017)
@@ -4495,8 +4497,8 @@ try {
 
 
 
-  // Salva last_bitlist_sync per sync incrementali
-  await env.brdb_users.prepare("UPDATE brdb_users SET last_bitlist_sync = ? WHERE uid = ?")
+  // Salva last_scraped
+  await env.brdb_users.prepare("UPDATE brdb_users SET last_scraped = ? WHERE uid = ?")
     .bind(now, user.uid).run();
   await env.brdb_users.prepare(
     'UPDATE users_index SET last_scraped = ?, username = ?, local_board = COALESCE(?, local_board) WHERE uid = ?'
@@ -4508,7 +4510,7 @@ try {
 // Cron trigger ogni minuto = ~1440 utenti/giorno
 // ═══════════════════════════════════════════════════════════════
 async function runSingleUserScrape(env) {
-  const APIkey = env.Bitlist_api_key2;
+  // REMOVED: Bitcointalk scraping code
   console.log('[Cron] APIkey present:', !!APIkey, '| length:', APIkey?.length || 0);
   if (!APIkey) { console.error('[Cron] Missing API key'); return; }
 
@@ -4539,8 +4541,8 @@ async function runSingleUserScrape(env) {
     console.log(`[Cron] Done uid ${row.uid}`);
   } catch (err) {
     if (err.message.startsWith('SKIP:')) {
-      // Utente non su Bitlist — scrappa comunque il profilo BT per reg_date e posts_total
-      console.warn(`[Cron] Skipping Bitlist uid ${row.uid}: ${err.message} — scraping BT profile anyway`);
+      // Utente non trovato — scraping BT profile
+      console.warn(`[Cron] Skipping uid ${row.uid}: ${err.message} — scraping BT profile anyway`);
       try {
         const btUrl = `https://bitcointalk.org/index.php?action=profile;u=${row.uid}`;
         const btRes = await fetch(btUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
@@ -4578,7 +4580,7 @@ async function runSingleUserScrape(env) {
 // CRON BATCH (legacy / paid plan): scrape N users in one go
 // ═══════════════════════════════════════════════════════════════
 async function runDailyScrape(env) {
-  const APIkey = env.Bitlist_api_key2;
+  // REMOVED: Bitcointalk scraping code
   console.log('[Cron] APIkey present:', !!APIkey, '| length:', APIkey?.length || 0);
   if (!APIkey) { console.error('[Cron] Missing API key'); return; }
 
@@ -5217,7 +5219,7 @@ ${renderBadgesSection(d, ranks, awardData)}
 </div>
 
 <div class="foot" style="margin-top:44px">
-  <p>BRDb Score · Data by <a href="https://bitlist.co" target="_blank">Bitlist</a>, courtesy of Tryninja</p>
+  <p>BRDb Score · Data by BRDb Scraper</p>
   <p style="margin-top:5px">Scores refreshed daily · <a href="https://bitcointalk.org/index.php?action=profile;u=${uid}" target="_blank">View on Bitcointalk</a></p>
 </div>
 
@@ -5668,7 +5670,7 @@ body{background:transparent;color:var(--txt);font-family:'Syne',sans-serif;min-h
 
   <div class="hero fade">
     <h1>🏆 <span>Leaderboard</span></h1>
-    <p>Rankings updated daily · Powered by Bitlist</p>
+    <p>Rankings updated daily · BRDb</p>
     <div style="position:relative;width:100%;max-width:420px;margin:16px auto 0">
       <input id="lbSearch" type="text" placeholder="Search username or UID..." autocomplete="off"
         style="width:100%;padding:12px 18px;font-size:15px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:10px;color:#e2e8f0;outline:none;font-family:inherit;transition:border-color .2s"
@@ -5710,7 +5712,7 @@ body{background:transparent;color:var(--txt);font-family:'Syne',sans-serif;min-h
   </div>
 
   <div class="foot">
-    <p>BRDb Score · Data by <a href="https://bitlist.co" target="_blank">Bitlist</a>, courtesy of Tryninja</p>
+    <p>BRDb Score · Data by BRDb Scraper</p>
   </div>
 </div>
 
