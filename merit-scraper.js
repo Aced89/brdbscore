@@ -905,14 +905,15 @@ async function updateUserStats(uid, amount, type, env) {
     await env.DB.prepare(`
       UPDATE user_profiles 
       SET ${field} = COALESCE(${field}, 0) + ?,
+          posts_120d = COALESCE(posts_120d, 0),
           updated_at = ?
       WHERE uid = ?
     `).bind(amount, Date.now(), uid).run();
   } else {
     const field = type === 'sent' ? 'merit_sent_120d' : 'merit_received_120d';
     await env.DB.prepare(`
-      INSERT INTO user_profiles (uid, username, ${field}, updated_at)
-      VALUES (?, NULL, ?, ?)
+      INSERT INTO user_profiles (uid, username, ${field}, posts_120d, updated_at)
+      VALUES (?, NULL, ?, 0, ?)
     `).bind(uid, amount, Date.now()).run();
   }
 }

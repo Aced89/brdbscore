@@ -656,8 +656,25 @@ async function scrapeProfile(uid, cookie, db) {
     var lastMatch = html.match(/<td[^>]*><b[^>]*>Last Active:\s*<\/b><\/td>\s*<td[^>]*>([^<]*)<\/td>/i);
     var nameMatch = html.match(/<td[^>]*><b[^>]*>Name:\s*<\/b><\/td>\s*<td[^>]*>([^<]+)<\/td>/i);
     
-    await db.prepare(
-      'INSERT OR REPLACE INTO user_profiles (uid, username, posts_total, merit_total, reg_date, last_active, posts_120d, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)'
-    ).bind(uid, nameMatch?.[1]?.trim() || null, postsMatch ? parseInt(postsMatch[1]) : null, meritMatch ? parseInt(meritMatch[1]) : null, regMatch?.[1]?.trim() || null, lastMatch?.[1]?.trim() || null, Date.now()).run();
+    var profile = {
+      uid: uid,
+      username: nameMatch?.[1]?.trim() || null,
+      posts_total: postsMatch ? parseInt(postsMatch[1]) : null,
+      merit_total: meritMatch ? parseInt(meritMatch[1]) : null,
+      reg_date: regMatch?.[1]?.trim() || null,
+      last_active: lastMatch?.[1]?.trim() || null,
+      updated_at: Date.now()
+    };
+    
+    var existing = await db.prepare('SELECT uid FROM user_profiles WHERE uid = ?').bind(uid).first();
+    if (existing) {
+      await db.prepare(
+        'UPDATE user_profiles SET username = ?, posts_total = ?, merit_total = ?, reg_date = ?, last_active = ?, updated_at = ? WHERE uid = ?'
+      ).bind(profile.username, profile.posts_total, profile.merit_total, profile.reg_date, profile.last_active, profile.updated_at, uid).run();
+    } else {
+      await db.prepare(
+        'INSERT INTO user_profiles (uid, username, posts_total, merit_total, reg_date, last_active, posts_120d, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)'
+      ).bind(uid, profile.username, profile.posts_total, profile.merit_total, profile.reg_date, profile.last_active, profile.updated_at).run();
+    }
   } catch (e) {}
 }

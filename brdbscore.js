@@ -422,7 +422,6 @@ export default {
     // ═══════════════════════════════════════════════════════════════
     if (request.method === 'POST' && path === '/cache') {
       try {
-      return json({ ok: true, message: "cache disabled" });
         const body = await request.json();
 
         // Version check — rifiuta script obsoleti
