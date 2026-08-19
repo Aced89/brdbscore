@@ -97,12 +97,37 @@ export default {
             continue;
           }
           
+          // Se to_uid è null, proviamo a recuperarlo scrapando il post
+          let final_to_uid = merit.to_uid;
+          if (!final_to_uid && env.BTT_COOKIE) {
+            try {
+              const postRes = await fetch(`https://bitcointalk.org/index.php?topic=${merit.topic_id}.msg${merit.msg_id}#msg${merit.msg_id}`, {
+                headers: { 
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Cookie': env.BTT_COOKIE,
+                  'Accept': 'text/html,application/xhtml+xml'
+                }
+              });
+              
+              if (postRes.ok) {
+                const postHtml = await postRes.text();
+                const uidMatch = postHtml.match(/<a\s+href="\/index\.php\?action=profile;u=(\d+)"/i);
+                if (uidMatch) {
+                  final_to_uid = parseInt(uidMatch[1]);
+                  console.log(`Recovered to_uid ${final_to_uid} for msg ${merit.msg_id}`);
+                }
+              }
+            } catch (e) {
+              console.error('Error fetching post for uid recovery:', e.message);
+            }
+          }
+          
           await env.DB.prepare(`
             INSERT INTO merit_events 
             (from_uid, to_uid, amount, msg_id, topic_id, title, timestamp, collected_at, unique_key) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).bind(
-            merit.from_uid, merit.to_uid, merit.amount, 
+            merit.from_uid, final_to_uid, merit.amount, 
             merit.msg_id, merit.topic_id, merit.title, 
             merit.timestamp, merit.collected_at,
             merit.unique_key
@@ -110,8 +135,8 @@ export default {
           
           saved++;
           
-          if (merit.to_uid) {
-            await updateUserStats(merit.to_uid, merit.amount, 'received', env);
+          if (final_to_uid) {
+            await updateUserStats(final_to_uid, merit.amount, 'received', env);
             resolved++;
           }
           await updateUserStats(merit.from_uid, merit.amount, 'sent', env);
@@ -183,11 +208,34 @@ export default {
           const timestamp = new Date().toISOString();
           const collected_at = Date.now();
           
-          const post = await env.DB.prepare(
+          let to_uid = await env.DB.prepare(
             'SELECT uid FROM post_events WHERE post_id = ?'
-          ).bind(msg_id).first();
+          ).bind(msg_id).first().then(r => r?.uid || null);
           
-          const to_uid = post ? post.uid : null;
+          // Se to_uid è null, proviamo a recuperarlo scrapando il post
+          if (!to_uid) {
+            try {
+              const postRes = await fetch(`https://bitcointalk.org/index.php?topic=${topic_id}.msg${msg_id}#msg${msg_id}`, {
+                headers: { 
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                  'Cookie': BTT_COOKIE,
+                  'Accept': 'text/html,application/xhtml+xml'
+                }
+              });
+              
+              if (postRes.ok) {
+                const postHtml = await postRes.text();
+                const uidMatch = postHtml.match(/<a\s+href="\/index\.php\?action=profile;u=(\d+)"/i);
+                if (uidMatch) {
+                  to_uid = parseInt(uidMatch[1]);
+                  console.log(`Recovered to_uid ${to_uid} for msg ${msg_id}`);
+                }
+              }
+            } catch (e) {
+              console.error('Error fetching post for uid recovery:', e.message);
+            }
+          }
+          
           const uniqueKey = `${msg_id}|${from_uid}|${to_uid || 'null'}|${amount}|${timestamp_str}`;
           
           await env.DB.prepare(`
