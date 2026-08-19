@@ -3703,6 +3703,72 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // GET /debug-profile?uid=X — mostra scraping profilo Bitcointalk vs DB
+    // ═══════════════════════════════════════════════════════════════
+    if (request.method === 'GET' && path === '/debug-profile') {
+      const testUid = u.searchParams.get('uid');
+      if (!testUid) return json({ error: 'Missing uid' }, 400);
+      
+      try {
+        // Scraping diretto del profilo Bitcointalk
+        const profileRes = await fetch(`https://bitcointalk.org/index.php?action=profile;u=${testUid}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://bitcointalk.org/'
+          }
+        });
+        
+        let bitcointalkData = null;
+        let scrapeError = null;
+        
+        if (profileRes.ok) {
+          const profileHtml = await profileRes.text();
+          bitcointalkData = parseBitcointalkProfile(profileHtml);
+        } else {
+          scrapeError = `HTTP ${profileRes.status}`;
+        }
+        
+        // Dati dal DB user_profiles
+        const dbProfile = await env.MERIT_DB.prepare(
+          'SELECT * FROM user_profiles WHERE uid = ?'
+        ).bind(testUid).first();
+        
+        // Dati dal DB brdb_users
+        const dbBrdb = await env.brdb_users.prepare(
+          'SELECT * FROM brdb_users WHERE uid = ?'
+        ).bind(testUid).first();
+        
+        // Merit events recenti
+        const recentMerits = await env.MERIT_DB.prepare(
+          'SELECT * FROM merit_events WHERE to_uid = ? OR from_uid = ? ORDER BY timestamp DESC LIMIT 10'
+        ).bind(testUid, testUid).all();
+        
+        return json({
+          uid: testUid,
+          bitcointalk_scraped: bitcointalkData,
+          bitcointalk_error: scrapeError,
+          db_user_profiles: dbProfile || null,
+          db_brdb_users: dbBrdb || null,
+          recent_merit_events: recentMerits.results || [],
+          comparison: {
+            bt_posts: bitcointalkData?.posts,
+            db_posts_total: dbProfile?.posts_total,
+            bt_merit: bitcointalkData?.meritTotal,
+            db_merit_total: dbProfile?.merit_total,
+            db_merit_received_120d: dbProfile?.merit_received_120d,
+            db_merit_sent_120d: dbProfile?.merit_sent_120d,
+            brdb_merit_total: dbBrdb?.merit_total,
+            brdb_posts_total: dbBrdb?.posts_total
+          }
+        });
+      } catch(err) {
+        return json({ error: err.message, stack: err.stack });
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // ═══════════════════════════════════════════════════════════════
     // GET /stats — quick stats for homepage
     if (request.method === 'GET' && path === '/stats') {
