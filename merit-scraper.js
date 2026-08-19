@@ -902,20 +902,39 @@ async function updateUserStats(uid, amount, type, env) {
   
   if (existing) {
     const field = type === 'sent' ? 'merit_sent_120d' : 'merit_received_120d';
-    await env.DB.prepare(`
-      UPDATE user_profiles 
-      SET ${field} = COALESCE(${field}, 0) + ?,
-          posts_120d = COALESCE(posts_120d, 0),
-          updated_at = ?
-      WHERE uid = ?
-    `).bind(amount, Date.now(), uid).run();
+    
+    if (type === 'received') {
+      await env.DB.prepare(`
+        UPDATE user_profiles 
+        SET ${field} = COALESCE(${field}, 0) + ?,
+            merit_total = COALESCE(merit_total, 0) + ?,
+            posts_120d = COALESCE(posts_120d, 0),
+            updated_at = ?
+        WHERE uid = ?
+      `).bind(amount, amount, Date.now(), uid).run();
+    } else {
+      await env.DB.prepare(`
+        UPDATE user_profiles 
+        SET ${field} = COALESCE(${field}, 0) + ?,
+            posts_120d = COALESCE(posts_120d, 0),
+            updated_at = ?
+        WHERE uid = ?
+      `).bind(amount, Date.now(), uid).run();
+    }
   } else {
-    const field = type === 'sent' ? 'merit_sent_120d' : 'merit_received_120d';
+    const receivedInit = type === 'received' ? amount : 0;
+    const totalInit = type === 'received' ? amount : 0;
+    const sentInit = type === 'sent' ? amount : 0;
     await env.DB.prepare(`
-      INSERT INTO user_profiles (uid, username, ${field}, posts_120d, updated_at)
-      VALUES (?, NULL, ?, 0, ?)
-    `).bind(uid, amount, Date.now()).run();
+      INSERT INTO user_profiles (uid, username, merit_received_120d, merit_sent_120d, merit_total, posts_120d, updated_at)
+      VALUES (?, NULL, ?, ?, ?, 0, ?)
+    `).bind(uid, receivedInit, sentInit, totalInit, Date.now()).run();
   }
+  
+  // Trigger profile scrape in background (non-blocking)
+  env.BTT_COOKIE && env.self && env.self.fetch(new Request('https://placeholder/force-profile?uid=' + uid, {
+    headers: { 'Cookie': env.BTT_COOKIE }
+  })).catch(() => {});
 }
 
 async function getUserStats(uid, env) {

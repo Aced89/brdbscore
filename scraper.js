@@ -189,15 +189,17 @@ async function scrapeMerits(uid, BTT_COOKIE, db) {
   const cutoff = Date.now() - 120 * 86400000;
   const recv120 = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE to_uid = ? AND collected_at > ?').bind(uid, cutoff).first();
   const sent120 = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE from_uid = ? AND collected_at > ?').bind(uid, cutoff).first();
+  const meritTotal = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE to_uid = ?').bind(uid).first();
   
   await db.prepare(`
     UPDATE user_profiles 
     SET merit_received_120d = ?, 
         merit_sent_120d = ?, 
+        merit_total = ?,
         posts_120d = COALESCE(posts_120d, 0),
         updated_at = ? 
     WHERE uid = ?
-  `).bind(recv120.total, sent120.total, Date.now(), uid).run();
+  `).bind(recv120.total, sent120.total, meritTotal.total, Date.now(), uid).run();
   
   return Response.json({ ok: true, received_saved: rSaved, sent_saved: sSaved, skipped });
 }
