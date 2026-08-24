@@ -116,12 +116,10 @@ export default {
       if (profileRes.ok) {
         const pHtml = await profileRes.text();
         const postsMatch = pHtml.match(/<td><b>Posts:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
-        const meritMatch = pHtml.match(/<td><b><a[^>]*>Merit<\/a>:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
         const nameMatch = pHtml.match(/<td><b>Name:\s*<\/b><\/td>\s*<td>([^<]+)<\/td>/i);
         btData = {
           name: nameMatch ? nameMatch[1].trim() : null,
           posts: postsMatch ? parseInt(postsMatch[1]) : null,
-          meritTotal: meritMatch ? parseInt(meritMatch[1]) : null
         };
       }
       
@@ -147,18 +145,26 @@ export default {
         db_brdb_users: dbBrdb,
         merit_received_total: meritReceived.total,
         merit_sent_total: meritSent.total,
-        recent_merit_events: meritRecent.results || [],
         comparison: {
           bt_posts: btData.posts,
-          db_posts_total: dbProfile?.posts_total,
-          bt_merit: btData.meritTotal,
-          db_merit_total: dbProfile?.merit_total,
-          db_merit_received_120d: dbProfile?.merit_received_120d,
-          db_merit_sent_120d: dbProfile?.merit_sent_120d,
-          brdb_merit_total: dbBrdb?.merit_total,
-          brdb_posts_total: dbBrdb?.posts_total,
-          calculated_merit_received: meritReceived.total,
-          calculated_merit_sent: meritSent.total
+          db_posts_total: dbProfile?.posts_total
+        }
+        comparison: {
+          bt_posts: btData.posts,
+          db_posts_total: dbProfile?.posts_total
+        }
+        comparison: {
+          bt_posts: btData.posts,
+          db_posts_total: dbProfile?.posts_total
+        }
+        comparison: {
+          bt_posts: btData.posts,
+          db_posts_total: dbProfile?.posts_total
+        }
+        comparison: {
+          bt_posts: btData.posts,
+          db_posts_total: dbProfile?.posts_total
+        }
         }
       });
     }
@@ -225,7 +231,7 @@ async function scrapeMerits(uid, BTT_COOKIE, db) {
     if (exists) { skipped++; continue; }
     
     await db.prepare(
-      'INSERT OR IGNORE INTO merit_events (from_uid, to_uid, amount, msg_id, title, timestamp, collected_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT OR IGNORE INTO merit_events (from_uid, to_uid, amount, msg_id, title, timestamp, collected_at) VALUES (?, ?, ?, ?, ?, ?)'
     ).bind(from_uid, uid, amount, msg_id, title, new Date().toISOString(), Date.now()).run();
     rSaved++;
     
@@ -243,7 +249,7 @@ async function scrapeMerits(uid, BTT_COOKIE, db) {
     if (exists) { skipped++; continue; }
     
     await db.prepare(
-      'INSERT OR IGNORE INTO merit_events (from_uid, to_uid, amount, msg_id, title, timestamp, collected_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT OR IGNORE INTO merit_events (from_uid, to_uid, amount, msg_id, title, timestamp, collected_at) VALUES (?, ?, ?, ?, ?, ?)'
     ).bind(uid, to_uid, amount, msg_id, title, new Date().toISOString(), Date.now()).run();
     sSaved++;
     
@@ -278,7 +284,6 @@ async function scrapeProfile(uid, cookie, db) {
     const pHtml = await profileRes.text();
     
     const postsMatch = pHtml.match(/<td><b>Posts:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
-    const meritMatch = pHtml.match(/<td><b><a[^>]*>Merit<\/a>:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
     const regMatch = pHtml.match(/<td><b>Date Registered:\s*<\/b><\/td>\s*<td>([^<]+)<\/td>/i);
     const lastMatch = pHtml.match(/<td><b>Last Active:\s*<\/b><\/td>\s*<td[^>]*>([^<]*)<\/td>/i);
     const nameMatch = pHtml.match(/<td><b>Name:\s*<\/b><\/td>\s*<td>([^<]+)<\/td>/i);
@@ -291,20 +296,17 @@ async function scrapeProfile(uid, cookie, db) {
       last_active: lastMatch ? lastMatch[1].trim() : null,
       updated_at: Date.now()
     };
-    
-    // NON calcoliamo merit_total dal database - lo prendiamo da bitcointalk
-    const meritMatchFromBt = pHtml.match(/<td><b><a[^>]*>Merit<\/a>:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
-    profile.merit_total = meritMatchFromBt ? parseInt(meritMatchFromBt[1]) : 0;
-    
+    // NON salviamo merit_total dallo scraping - viene calcolato da updateUserStats in brdbscore.js
+    // Questo evita di sovrascrivere i conteggi corretti con dati obsoleti da Bitcointalk
     const existing = await db.prepare('SELECT uid FROM user_profiles WHERE uid = ?').bind(uid).first();
     if (existing) {
       await db.prepare(
-        'UPDATE user_profiles SET username = ?, posts_total = ?, merit_total = ?, reg_date = ?, last_active = ?, updated_at = ? WHERE uid = ?'
-      ).bind(profile.username, profile.posts_total, profile.merit_total, profile.reg_date, profile.last_active, profile.updated_at, uid).run();
+        'UPDATE user_profiles SET username = ?, posts_total = ?, reg_date = ?, last_active = ?, updated_at = ? WHERE uid = ?'
+      ).bind(profile.username, profile.posts_total, profile.reg_date, profile.last_active, profile.updated_at, uid).run();
     } else {
       await db.prepare(
-        'INSERT INTO user_profiles (uid, username, posts_total, merit_total, reg_date, last_active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).bind(uid, profile.username, profile.posts_total, profile.merit_total, profile.reg_date, profile.last_active, profile.updated_at).run();
+        'INSERT INTO user_profiles (uid, username, posts_total, reg_date, last_active, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+      ).bind(uid, profile.username, profile.posts_total, profile.reg_date, profile.last_active, profile.updated_at).run();
     }
     
     return profile;

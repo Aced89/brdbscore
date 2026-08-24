@@ -2786,7 +2786,6 @@ try {
             SELECT 
               m.amount, 
               m.from_uid, 
-*/
               m.to_uid,
               m.title as post_title,
               m.topic_id,
@@ -3300,6 +3299,8 @@ try {
     }
   }
   
+  // Global feed disabled - removed to save DB resources
+  /*
   async function fetchNewEvents() {
     try {
       const response = await fetch('/global-feed-data?since=' + lastTimestamp);
@@ -3342,6 +3343,7 @@ try {
   window.addEventListener('beforeunload', () => {
     if (refreshInterval) clearInterval(refreshInterval);
   });
+  */
 </script>
 </body>
 </html>`;
@@ -4936,8 +4938,8 @@ function getMsBadge() {
 function renderBadgesSection(d, ranks, awardData = null) {
   const senderBadge   = getMeritSenderBadge(ranks.send);
   const receiverBadge = getMeritReceiverBadge(ranks.recv);
-  const isMeritSource = d.merits_sent_total > 0 && d.merit_total > 0 && (d.merits_sent_total / d.merit_total) > 0.5;
-  const msBadge       = isMeritSource ? getMsBadge() : null;
+  // Merit Source badge removed - logic was incorrect
+  const msBadge = null;
   // Community Award badge
   let awardBadge = null;
   if (awardData && awardData.title) {
@@ -4971,7 +4973,7 @@ function renderBadgesSection(d, ranks, awardData = null) {
       <span style="font-size:12px;font-weight:700;color:#fbbf24;letter-spacing:0.5px;text-align:center;max-width:140px;line-height:1.3">${awardData.title}</span>
     </div>`;
   }
-  const hasBadges = senderBadge || receiverBadge || msBadge || awardBadge;
+  const hasBadges = senderBadge || receiverBadge || awardBadge;
   if (!hasBadges) return '';
   const wrap = (b) => b ? `<div style="display:inline-flex;align-items:center">${b}</div>` : '';
   return '<div class="badges-wrap" style="background:var(--s);border:1px solid var(--b);border-radius:18px;padding:14px 20px;margin-bottom:20px">'
@@ -4981,7 +4983,6 @@ function renderBadgesSection(d, ranks, awardData = null) {
     + wrap(awardBadge)
     + wrap(senderBadge)
     + wrap(receiverBadge)
-    + wrap(msBadge)
     + '</div></div>';
 }
    
