@@ -103,6 +103,65 @@ export default {
       return Response.json({ uid, ...row });
     }
     
+    if (url.pathname === '/debug-profile' && url.searchParams.get('uid')) {
+      const uid = url.searchParams.get('uid');
+      const BTT_COOKIE = env.BTT_COOKIE;
+      
+      // Scraping diretto del profilo
+      const profileRes = await fetch(`https://bitcointalk.org/index.php?action=profile;u=${uid}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Cookie': BTT_COOKIE }
+      });
+      
+      let btData = { error: 'Failed to scrape' };
+      if (profileRes.ok) {
+        const pHtml = await profileRes.text();
+        const postsMatch = pHtml.match(/<td><b>Posts:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
+        const meritMatch = pHtml.match(/<td><b><a[^>]*>Merit<\/a>:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
+        const nameMatch = pHtml.match(/<td><b>Name:\s*<\/b><\/td>\s*<td>([^<]+)<\/td>/i);
+        btData = {
+          name: nameMatch ? nameMatch[1].trim() : null,
+          posts: postsMatch ? parseInt(postsMatch[1]) : null,
+          meritTotal: meritMatch ? parseInt(meritMatch[1]) : null
+        };
+      }
+      
+      // Dati dal database user_profiles
+      const dbProfile = await env.DB.prepare('SELECT * FROM user_profiles WHERE uid = ?').bind(uid).first();
+      
+      // Dati dal database brdb_users
+      const dbBrdb = await env.DB.prepare('SELECT * FROM brdb_users WHERE uid = ?').bind(uid).first();
+      
+      // Calcolo merit da merit_events
+      const meritReceived = await env.DB.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE to_uid = ?').bind(uid).first();
+      const meritSent = await env.DB.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE from_uid = ?').bind(uid).first();
+      const meritRecent = await env.DB.prepare(`
+        SELECT * FROM merit_events 
+        WHERE from_uid = ? OR to_uid = ? 
+        ORDER BY collected_at DESC LIMIT 10
+      `).bind(uid, uid).all();
+      
+      return Response.json({
+        uid,
+        bitcointalk_scraped: btData,
+        db_user_profiles: dbProfile,
+        db_brdb_users: dbBrdb,
+        merit_received_total: meritReceived.total,
+        merit_sent_total: meritSent.total,
+        recent_merit_events: meritRecent.results || [],
+        comparison: {
+          bt_posts: btData.posts,
+          db_posts_total: dbProfile?.posts_total,
+          bt_merit: btData.meritTotal,
+          db_merit_total: dbProfile?.merit_total,
+          db_merit_received_120d: dbProfile?.merit_received_120d,
+          db_merit_sent_120d: dbProfile?.merit_sent_120d,
+          brdb_merit_total: dbBrdb?.merit_total,
+          brdb_posts_total: dbBrdb?.posts_total,
+          calculated_merit_received: meritReceived.total,
+          calculated_merit_sent: meritSent.total
+        }
+      });
+    }
     if (url.pathname === '/stats') {
       const total = await env.DB.prepare('SELECT COUNT(*) as n FROM users_queue').first();
       const scraped = await env.DB.prepare('SELECT COUNT(*) as n FROM users_queue WHERE scraped = 1').first();
@@ -169,6 +228,9 @@ async function scrapeMerits(uid, BTT_COOKIE, db) {
       'INSERT OR IGNORE INTO merit_events (from_uid, to_uid, amount, msg_id, title, timestamp, collected_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).bind(from_uid, uid, amount, msg_id, title, new Date().toISOString(), Date.now()).run();
     rSaved++;
+    
+    // Aggiorniamo subito il profilo di chi ha ricevuto il merit
+    await scrapeProfile(uid, BTT_COOKIE, db);
   }
   
   while ((match = sentRegex.exec(html)) !== null) {
@@ -184,6 +246,9 @@ async function scrapeMerits(uid, BTT_COOKIE, db) {
       'INSERT OR IGNORE INTO merit_events (from_uid, to_uid, amount, msg_id, title, timestamp, collected_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).bind(uid, to_uid, amount, msg_id, title, new Date().toISOString(), Date.now()).run();
     sSaved++;
+    
+    // Aggiorniamo subito il profilo di chi ha inviato il merit
+    await scrapeProfile(uid, BTT_COOKIE, db);
   }
   
   const cutoff = Date.now() - 120 * 86400000;
@@ -223,11 +288,14 @@ async function scrapeProfile(uid, cookie, db) {
       uid: uid,
       username: nameMatch ? nameMatch[1].trim() : null,
       posts_total: postsMatch ? parseInt(postsMatch[1]) : null,
-      merit_total: meritMatch ? parseInt(meritMatch[1]) : null,
       reg_date: regMatch ? regMatch[1].trim() : null,
       last_active: lastMatch ? lastMatch[1].trim() : null,
       updated_at: Date.now()
     };
+    
+    // Calcoliamo merit_total dal database invece che da bitcointalk
+    const meritTotalResult = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE to_uid = ?').bind(uid).first();
+    profile.merit_total = meritTotalResult.total;
     
     const existing = await db.prepare('SELECT uid FROM user_profiles WHERE uid = ?').bind(uid).first();
     if (existing) {
