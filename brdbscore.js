@@ -3703,6 +3703,72 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // GET /debug-profile?uid=X — mostra scraping profilo Bitcointalk vs DB
+    // ═══════════════════════════════════════════════════════════════
+    if (request.method === 'GET' && path === '/debug-profile') {
+      const testUid = u.searchParams.get('uid');
+      if (!testUid) return json({ error: 'Missing uid' }, 400);
+      
+      try {
+        // Scraping diretto del profilo Bitcointalk
+        const profileRes = await fetch(`https://bitcointalk.org/index.php?action=profile;u=${testUid}`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://bitcointalk.org/'
+          }
+        });
+        
+        let bitcointalkData = null;
+        let scrapeError = null;
+        
+        if (profileRes.ok) {
+          const profileHtml = await profileRes.text();
+          bitcointalkData = parseBitcointalkProfile(profileHtml);
+        } else {
+          scrapeError = `HTTP ${profileRes.status}`;
+        }
+        
+        // Dati dal DB user_profiles
+        const dbProfile = await env.MERIT_DB.prepare(
+          'SELECT * FROM user_profiles WHERE uid = ?'
+        ).bind(testUid).first();
+        
+        // Dati dal DB brdb_users
+        const dbBrdb = await env.brdb_users.prepare(
+          'SELECT * FROM brdb_users WHERE uid = ?'
+        ).bind(testUid).first();
+        
+        // Merit events recenti
+        const recentMerits = await env.MERIT_DB.prepare(
+          'SELECT * FROM merit_events WHERE to_uid = ? OR from_uid = ? ORDER BY timestamp DESC LIMIT 10'
+        ).bind(testUid, testUid).all();
+        
+        return json({
+          uid: testUid,
+          bitcointalk_scraped: bitcointalkData,
+          bitcointalk_error: scrapeError,
+          db_user_profiles: dbProfile || null,
+          db_brdb_users: dbBrdb || null,
+          recent_merit_events: recentMerits.results || [],
+          comparison: {
+            bt_posts: bitcointalkData?.posts,
+            db_posts_total: dbProfile?.posts_total,
+            bt_merit: bitcointalkData?.meritTotal,
+            db_merit_total: dbProfile?.merit_total,
+            db_merit_received_120d: dbProfile?.merit_received_120d,
+            db_merit_sent_120d: dbProfile?.merit_sent_120d,
+            brdb_merit_total: dbBrdb?.merit_total,
+            brdb_posts_total: dbBrdb?.posts_total
+          }
+        });
+      } catch(err) {
+        return json({ error: err.message, stack: err.stack });
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // ═══════════════════════════════════════════════════════════════
     // GET /stats — quick stats for homepage
     if (request.method === 'GET' && path === '/stats') {
@@ -4339,25 +4405,31 @@ async function scrapeAndSave(user, dateMin120, today, APIkey, env) {
   const data = await cronScrapeUser(user.uid, dateMin120, today, APIkey, user.local_board, lastSync, syncRow);
   const profileData = data.bitcointalk || {};
   // Se Bitcointalk era down, recupera posts/merit dal DB esistente
-  let postsTotal, meritTotal, meritsSentTotal, existingRow = null;
+  let postsTotal, existingRow = null;
   if (profileData.bitcointalkDown) {
     const existing = await env.brdb_users.prepare(
       'SELECT posts_total, merit_total, merits_sent_total, reg_date, last_active FROM brdb_users WHERE uid = ?'
     ).bind(user.uid).first();
     existingRow = existing;
     postsTotal = existing?.posts_total || 0;
-    meritTotal = existing?.merit_total || 0;
-    meritsSentTotal = data.merits_sent_count || existing?.merits_sent_total || 0;
-    meritTotalBt = existing?.merit_total_bt_removed || 0;
-    console.log(`[Cron] uid ${user.uid} using cached posts=${postsTotal} merit=${meritTotal} (Bitcointalk down)`);
+    console.log(`[Cron] uid ${user.uid} using cached posts=${postsTotal} (Bitcointalk down)`);
   } else {
     postsTotal = profileData.posts || 0;
-    // REMOVED
-    meritTotal = data.merits_received_count || profileData.meritTotal || 0;
-    meritsSentTotal = data.merits_sent_count || 0;
-    // meritTotalBt = valore Bitcointalk grezzo (include airdrop 2017)
-    console.log(`[Cron] uid ${user.uid} merits_sent_count=${data.merits_sent_count} meritsSentTotal=${meritsSentTotal}`);
+    console.log(`[Cron] uid ${user.uid} scraped posts=${postsTotal} from Bitcointalk`);
   }
+  
+  // CALCOLO MERIT TOTALI DA merit_events (SEMPRE, per entrambi gli utenti)
+  const meritReceivedResult = await env.MERIT_DB.prepare(
+    'SELECT SUM(amount) as total FROM merit_events WHERE to_uid = ?'
+  ).bind(user.uid).first();
+  const meritTotal = meritReceivedResult?.total || 0;
+  
+  const meritSentResult = await env.MERIT_DB.prepare(
+    'SELECT SUM(amount) as total FROM merit_events WHERE from_uid = ?'
+  ).bind(user.uid).first();
+  const meritsSentTotal = meritSentResult?.total || 0;
+  
+  console.log(`[Cron] uid ${user.uid} calculated merit_total=${meritTotal}, merits_sent_total=${meritsSentTotal} from merit_events`);
   // Usa merit_earned (da Loyce) se disponibile, altrimenti merit_total
   // merit_earned esclude gli airdrop del 2017 che falsavano i calcoli
   const existingMeritEarned = user.merit_earned != null ? user.merit_earned : null;
@@ -4764,7 +4836,6 @@ function parseBitcointalkProfile(html) {
   return {
     name:       getProfileNameFromHtml(html),
     posts:      getProfileNumberFromHtml(html, 'Posts:'),
-    meritTotal: getProfileMeritFromHtml(html),
     regDate:    getProfileDateFromHtml(html, 'Date Registered:'),
     lastActive: getProfileDateFromHtml(html, 'Last Active:')
   };
