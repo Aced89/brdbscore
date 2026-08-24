@@ -254,17 +254,16 @@ async function scrapeMerits(uid, BTT_COOKIE, db) {
   const cutoff = Date.now() - 120 * 86400000;
   const recv120 = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE to_uid = ? AND collected_at > ?').bind(uid, cutoff).first();
   const sent120 = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE from_uid = ? AND collected_at > ?').bind(uid, cutoff).first();
-  const meritTotal = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE to_uid = ?').bind(uid).first();
+  
+  // NON aggiorniamo merit_total qui - viene aggiornato solo da scrapeProfile
   
   await db.prepare(`
     UPDATE user_profiles 
     SET merit_received_120d = ?, 
-        merit_sent_120d = ?, 
-        merit_total = ?,
-        posts_120d = COALESCE(posts_120d, 0),
+        merit_sent_120d = ?,
         updated_at = ? 
     WHERE uid = ?
-  `).bind(recv120.total, sent120.total, meritTotal.total, Date.now(), uid).run();
+  `).bind(recv120.total, sent120.total, Date.now(), uid).run();
   
   return Response.json({ ok: true, received_saved: rSaved, sent_saved: sSaved, skipped });
 }
@@ -293,9 +292,9 @@ async function scrapeProfile(uid, cookie, db) {
       updated_at: Date.now()
     };
     
-    // Calcoliamo merit_total dal database invece che da bitcointalk
-    const meritTotalResult = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE to_uid = ?').bind(uid).first();
-    profile.merit_total = meritTotalResult.total;
+    // NON calcoliamo merit_total dal database - lo prendiamo da bitcointalk
+    const meritMatchFromBt = pHtml.match(/<td><b><a[^>]*>Merit<\/a>:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
+    profile.merit_total = meritMatchFromBt ? parseInt(meritMatchFromBt[1]) : 0;
     
     const existing = await db.prepare('SELECT uid FROM user_profiles WHERE uid = ?').bind(uid).first();
     if (existing) {
