@@ -2769,10 +2769,13 @@ try {
       }
     }
 
-       // ═══════════════════════════════════════════════════════════════
-    // GET /global-feed-data — API endpoint for new events (JSON)
+    // ═══════════════════════════════════════════════════════════════
+    // DISABLED: GET /global-feed-data — API endpoint removed to save DB resources
     // ═══════════════════════════════════════════════════════════════
     if (request.method === 'GET' && path === '/global-feed-data') {
+      return json({ error: 'Global feed disabled' }, 410);
+      
+      /* REMOVED CODE:
       const since = parseInt(u.searchParams.get('since') || '0');
       
       try {
@@ -2783,6 +2786,7 @@ try {
             SELECT 
               m.amount, 
               m.from_uid, 
+*/
               m.to_uid,
               m.title as post_title,
               m.topic_id,
@@ -2878,9 +2882,12 @@ try {
     }
     
     // ═══════════════════════════════════════════════════════════════
-    // GET /global-feed — Global activity feed (real-time, same style as notifications)
+    // DISABLED: GET /global-feed — Global activity feed removed to save DB resources
     // ═══════════════════════════════════════════════════════════════
     if (request.method === 'GET' && path === '/global-feed') {
+      return json({ error: 'Global feed disabled' }, 410);
+      
+      /* REMOVED CODE:
       try {
         // 1. Last 30 merits (global)
         let meritsReceived = { results: [] };
@@ -2914,6 +2921,7 @@ try {
               p.title,
               p.board_id,
               p.collected_at,
+*/
               datetime(p.collected_at/1000, 'unixepoch', 'localtime') as date,
               'post' as type
             FROM post_events p
@@ -5749,11 +5757,10 @@ body{background:transparent;color:var(--txt);font-family:'Syne',sans-serif;min-h
     </div>
   </div>
 
-   <div class="tabs">
+  <div class="tabs">
     <button class="tab active" id="tab-global" onclick="switchTab('global')">🌍 Global</button>
     <button class="tab" id="tab-local" onclick="switchTab('local')">🗺️ Local Boards</button>
     <button class="tab" id="tab-stats" onclick="switchTab('stats')">📊 Stats</button>
-    <button class="tab" id="tab-feed" onclick="window.location.href='/global-feed'">📡 Live Feed</button>
   </div>
 
   <!-- GLOBAL TAB -->
