@@ -4405,25 +4405,31 @@ async function scrapeAndSave(user, dateMin120, today, APIkey, env) {
   const data = await cronScrapeUser(user.uid, dateMin120, today, APIkey, user.local_board, lastSync, syncRow);
   const profileData = data.bitcointalk || {};
   // Se Bitcointalk era down, recupera posts/merit dal DB esistente
-  let postsTotal, meritTotal, meritsSentTotal, existingRow = null;
+  let postsTotal, existingRow = null;
   if (profileData.bitcointalkDown) {
     const existing = await env.brdb_users.prepare(
       'SELECT posts_total, merit_total, merits_sent_total, reg_date, last_active FROM brdb_users WHERE uid = ?'
     ).bind(user.uid).first();
     existingRow = existing;
     postsTotal = existing?.posts_total || 0;
-    meritTotal = existing?.merit_total || 0;
-    meritsSentTotal = data.merits_sent_count || existing?.merits_sent_total || 0;
-    meritTotalBt = existing?.merit_total_bt_removed || 0;
-    console.log(`[Cron] uid ${user.uid} using cached posts=${postsTotal} merit=${meritTotal} (Bitcointalk down)`);
+    console.log(`[Cron] uid ${user.uid} using cached posts=${postsTotal} (Bitcointalk down)`);
   } else {
     postsTotal = profileData.posts || 0;
-    // REMOVED
-    meritTotal = data.merits_received_count || profileData.meritTotal || 0;
-    meritsSentTotal = data.merits_sent_count || 0;
-    // meritTotalBt = valore Bitcointalk grezzo (include airdrop 2017)
-    console.log(`[Cron] uid ${user.uid} merits_sent_count=${data.merits_sent_count} meritsSentTotal=${meritsSentTotal}`);
+    console.log(`[Cron] uid ${user.uid} scraped posts=${postsTotal} from Bitcointalk`);
   }
+  
+  // CALCOLO MERIT TOTALI DA merit_events (SEMPRE, per entrambi gli utenti)
+  const meritReceivedResult = await env.MERIT_DB.prepare(
+    'SELECT SUM(amount) as total FROM merit_events WHERE to_uid = ?'
+  ).bind(user.uid).first();
+  const meritTotal = meritReceivedResult?.total || 0;
+  
+  const meritSentResult = await env.MERIT_DB.prepare(
+    'SELECT SUM(amount) as total FROM merit_events WHERE from_uid = ?'
+  ).bind(user.uid).first();
+  const meritsSentTotal = meritSentResult?.total || 0;
+  
+  console.log(`[Cron] uid ${user.uid} calculated merit_total=${meritTotal}, merits_sent_total=${meritsSentTotal} from merit_events`);
   // Usa merit_earned (da Loyce) se disponibile, altrimenti merit_total
   // merit_earned esclude gli airdrop del 2017 che falsavano i calcoli
   const existingMeritEarned = user.merit_earned != null ? user.merit_earned : null;
@@ -4830,7 +4836,6 @@ function parseBitcointalkProfile(html) {
   return {
     name:       getProfileNameFromHtml(html),
     posts:      getProfileNumberFromHtml(html, 'Posts:'),
-    meritTotal: getProfileMeritFromHtml(html),
     regDate:    getProfileDateFromHtml(html, 'Date Registered:'),
     lastActive: getProfileDateFromHtml(html, 'Last Active:')
   };
