@@ -4470,12 +4470,20 @@ async function scrapeAndSave(user, dateMin120, today, APIkey, env) {
 try {
   await env.MERIT_DB.prepare(`
     INSERT OR REPLACE INTO user_profiles (
-      uid, username, posts_total, merit_total, reg_date, last_active, updated_at,
+      uid, username, posts_total, merit_total, reg_date, last_active, bitcointalk_scraped, updated_at,
       posts_120d, merit_received_120d, merit_sent_120d
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     uid, username, postsTotal, meritTotal,
-    profileData.regDate || null, profileData.lastActive || null, now,
+    profileData.regDate || null, profileData.lastActive || null, 
+    JSON.stringify({
+      name: username,
+      posts: postsTotal,
+      meritTotal: meritTotal,
+      regDate: profileData.regDate || null,
+      lastActive: profileData.lastActive || null
+    }),
+    now,
     posts120, merit120, merits_sent120
   ).run();
   console.log(`[Sync] MERIT_DB aggiornato per uid ${uid}`);
