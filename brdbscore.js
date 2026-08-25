@@ -2291,7 +2291,7 @@ if (path === '/test-post-body' && url.searchParams.get('post_id')) {
     });
   }
 }
-  
+   
         // ═══════════════════════════════════════════════════════════════
     // GET /notifications/:uid — User Notification Center (Futuristic)
     // ═══════════════════════════════════════════════════════════════
@@ -2919,7 +2919,6 @@ try {
               p.title,
               p.board_id,
               p.collected_at,
-*/
               datetime(p.collected_at/1000, 'unixepoch', 'localtime') as date,
               'post' as type
             FROM post_events p
@@ -2940,7 +2939,9 @@ try {
             return `UID ${uid}`;
           }
         }
-        
+
+
+        */
         // Helper to decode HTML entities
         function decodeHtmlEntities(str) {
           if (!str) return '';
@@ -3361,11 +3362,6 @@ try {
           status: 200,
           headers: { ...cors, 'Content-Type': 'text/html; charset=utf-8' }
         });
-        
-      } catch (err) {
-        console.error('GET /global-feed error:', err);
-        return json({ error: err.message }, 500);
-      }
     }
     
 // ═══════════════════════════════════════════════════════════════
