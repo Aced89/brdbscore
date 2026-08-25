@@ -1429,15 +1429,15 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
           'SELECT * FROM brdb_users WHERE uid = ?'
         ).bind(uid).first();
 
-        // Merge: spread di brdbRow (tutti i calcoli), sovrascrivi con dati freschi
+        // Merge: spread di brdbRow (tutti i calcoli), sovrascrivi con dati freschi da user_profiles
         const mergedRow = {
           ...brdbRow,
           username: row?.username || brdbRow?.username || null,
-          posts_total: row?.posts_total || brdbRow?.posts_total || 0,
-          merit_total: row?.merit_total || brdbRow?.merit_total || 0,
-          posts120: row?.posts_120d || brdbRow?.posts120 || 0,
-          merit120: row?.merit_received_120d || brdbRow?.merit120 || 0,
-          merits_sent120: row?.merit_sent_120d || brdbRow?.merits_sent120 || 0,
+          posts_total: row?.posts_total ?? brdbRow?.posts_total ?? 0,
+          merit_total: row?.merit_total ?? brdbRow?.merit_total ?? 0,
+          posts120: row?.posts_120d ?? brdbRow?.posts120 ?? 0,
+          merit120: row?.merit_received_120d ?? brdbRow?.merit120 ?? 0,
+          merits_sent120: row?.merit_sent_120d ?? brdbRow?.merits_sent120 ?? 0,
           reg_date: row?.reg_date || brdbRow?.reg_date || null,
           last_active: row?.last_active || brdbRow?.last_active || null,
           local_board: row?.local_board || brdbRow?.local_board || null,
