@@ -116,10 +116,12 @@ export default {
       if (profileRes.ok) {
         const pHtml = await profileRes.text();
         const postsMatch = pHtml.match(/<td><b>Posts:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
+        const meritMatch = pHtml.match(/<td><b>Merit:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
         const nameMatch = pHtml.match(/<td><b>Name:\s*<\/b><\/td>\s*<td>([^<]+)<\/td>/i);
         btData = {
           name: nameMatch ? nameMatch[1].trim() : null,
           posts: postsMatch ? parseInt(postsMatch[1]) : null,
+          meritTotal: meritMatch ? parseInt(meritMatch[1]) : null,
         };
       }
       
