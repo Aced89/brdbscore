@@ -1404,44 +1404,43 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
         // ═══════════════════════════════════════════════════════════════
     //     // ═══════════════════════════════════════════════════════════════
     // GET /profile/:uid — public BRDb profile page
-    // ═══════════════════════════════════════════════════════════════
     const profileMatch = path.match(/^\/profile\/(\d+)$/);
     if (request.method === 'GET' && profileMatch) {
       const uid = profileMatch[1];
       try {
-        // 1. Fetch dal tuo database brdb_users
-        const row = await env.brdb_users.prepare(
-       'SELECT * FROM brdb_users WHERE uid = ?'
+        // 1. Fetch dati freschi da user_profiles (scrapati da Bitcointalk)
+        const userProfile = await env.MERIT_DB.prepare(
+          'SELECT * FROM user_profiles WHERE uid = ?'
         ).bind(uid).first();
 
-    if (!row) {
-      return new Response(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Not Found</title>
+        // 2. Fetch dati calcolati da brdb_users
+        const brdbRow = await env.brdb_users.prepare(
+          'SELECT * FROM brdb_users WHERE uid = ?'
+        ).bind(uid).first();
+
+        if (!brdbRow && !userProfile) {
+          return new Response(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Not Found</title>
      <style>body{background:#060a14;color:#e2e8f0;font-family:sans-serif;font-size:16px;display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px}
      a{color:#3b82f6}</style></head><body>
      <div style="font-size:48px">🔍</div>
      <div style="font-size:20px;font-weight:bold">User #${uid} not found</div>
      <div style="color:#64748b">This user hasn't been scored yet</div>
      </body></html>`, { status: 404, headers: { ...cors, 'Content-Type': 'text/html' } });
-  }
+        }
 
-        // Prendi TUTTI i campi calcolati da brdb_users
-        const brdbRow = await env.brdb_users.prepare(
-          'SELECT * FROM brdb_users WHERE uid = ?'
-        ).bind(uid).first();
-
-        // Merge: spread di brdbRow (tutti i calcoli), sovrascrivi con dati freschi da user_profiles
+        // Merge: partiamo da brdbRow (tutti i calcoli), sovrascrivi con dati freschi da user_profiles
         const mergedRow = {
           ...brdbRow,
-          username: row?.username || brdbRow?.username || null,
-          posts_total: row?.posts_total ?? brdbRow?.posts_total ?? 0,
-          merit_total: row?.merit_total ?? brdbRow?.merit_total ?? 0,
-          posts120: row?.posts_120d ?? brdbRow?.posts120 ?? 0,
-          merit120: row?.merit_received_120d ?? brdbRow?.merit120 ?? 0,
-          merits_sent120: row?.merit_sent_120d ?? brdbRow?.merits_sent120 ?? 0,
-          reg_date: row?.reg_date || brdbRow?.reg_date || null,
-          last_active: row?.last_active || brdbRow?.last_active || null,
-          local_board: row?.local_board || brdbRow?.local_board || null,
-          updated_at: row?.updated_at || brdbRow?.updated_at || Date.now(),
+          username: userProfile?.username || brdbRow?.username || null,
+          posts_total: userProfile?.posts_total ?? brdbRow?.posts_total ?? 0,
+          merit_total: userProfile?.merit_total ?? brdbRow?.merit_total ?? 0,
+          posts120: userProfile?.posts_120d ?? brdbRow?.posts120 ?? 0,
+          merit120: userProfile?.merit_received_120d ?? brdbRow?.merit120 ?? 0,
+          merits_sent120: userProfile?.merit_sent_120d ?? brdbRow?.merits_sent120 ?? 0,
+          reg_date: userProfile?.reg_date || brdbRow?.reg_date || null,
+          last_active: userProfile?.last_active || brdbRow?.last_active || null,
+          local_board: userProfile?.local_board || brdbRow?.local_board || null,
+          updated_at: userProfile?.updated_at || brdbRow?.updated_at || Date.now(),
         };
 
         // 2. Fetch ranks da brdb_users
