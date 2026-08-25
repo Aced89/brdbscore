@@ -1428,17 +1428,17 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
      </body></html>`, { status: 404, headers: { ...cors, 'Content-Type': 'text/html' } });
         }
 
-        // Merge: partiamo da brdbRow (tutti i calcoli), sovrascrivi con dati freschi da user_profiles
+        // Merge: partiamo da brdbRow (tutti i calcoli), sovrascrivi con dati freschi da bitcointalk_scraped se disponibili, altrimenti user_profiles
         const mergedRow = {
           ...brdbRow,
-          username: userProfile?.username || brdbRow?.username || null,
-          posts_total: userProfile?.posts_total ?? brdbRow?.posts_total ?? 0,
-          merit_total: userProfile?.merit_total ?? brdbRow?.merit_total ?? 0,
+          username: bitcointalkData?.name || userProfile?.username || brdbRow?.username || null,
+          posts_total: bitcointalkData?.posts ?? userProfile?.posts_total ?? brdbRow?.posts_total ?? 0,
+          merit_total: bitcointalkData?.merit ?? userProfile?.merit_total ?? brdbRow?.merit_total ?? 0,
           posts120: userProfile?.posts_120d ?? brdbRow?.posts120 ?? 0,
           merit120: userProfile?.merit_received_120d ?? brdbRow?.merit120 ?? 0,
           merits_sent120: userProfile?.merit_sent_120d ?? brdbRow?.merits_sent120 ?? 0,
-          reg_date: userProfile?.reg_date || brdbRow?.reg_date || null,
-          last_active: userProfile?.last_active || brdbRow?.last_active || null,
+          reg_date: bitcointalkData?.regDate || userProfile?.reg_date || brdbRow?.reg_date || null,
+          last_active: bitcointalkData?.lastActive || userProfile?.last_active || brdbRow?.last_active || null,
           local_board: userProfile?.local_board || brdbRow?.local_board || null,
           updated_at: userProfile?.updated_at || brdbRow?.updated_at || Date.now(),
         };
