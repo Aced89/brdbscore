@@ -4846,6 +4846,7 @@ function parseBitcointalkProfile(html) {
   return {
     name:       getProfileNameFromHtml(html),
     posts:      getProfileNumberFromHtml(html, 'Posts:'),
+    meritTotal: getProfileMeritFromHtml(html),
     regDate:    getProfileDateFromHtml(html, 'Date Registered:'),
     lastActive: getProfileDateFromHtml(html, 'Last Active:')
   };

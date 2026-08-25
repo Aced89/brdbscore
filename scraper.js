@@ -145,26 +145,13 @@ export default {
         db_brdb_users: dbBrdb,
         merit_received_total: meritReceived.total,
         merit_sent_total: meritSent.total,
+        recent_merit_events: meritRecent.results || [],
         comparison: {
           bt_posts: btData.posts,
-          db_posts_total: dbProfile?.posts_total
-        }
-        comparison: {
-          bt_posts: btData.posts,
-          db_posts_total: dbProfile?.posts_total
-        }
-        comparison: {
-          bt_posts: btData.posts,
-          db_posts_total: dbProfile?.posts_total
-        }
-        comparison: {
-          bt_posts: btData.posts,
-          db_posts_total: dbProfile?.posts_total
-        }
-        comparison: {
-          bt_posts: btData.posts,
-          db_posts_total: dbProfile?.posts_total
-        }
+          db_posts_total: dbProfile?.posts_total,
+          bt_merit: btData.merit,
+          brdb_merit_total: dbBrdb?.merit_total,
+          db_merit_total: dbProfile?.merit_total
         }
       });
     }
@@ -287,26 +274,26 @@ async function scrapeProfile(uid, cookie, db) {
     const regMatch = pHtml.match(/<td><b>Date Registered:\s*<\/b><\/td>\s*<td>([^<]+)<\/td>/i);
     const lastMatch = pHtml.match(/<td><b>Last Active:\s*<\/b><\/td>\s*<td[^>]*>([^<]*)<\/td>/i);
     const nameMatch = pHtml.match(/<td><b>Name:\s*<\/b><\/td>\s*<td>([^<]+)<\/td>/i);
+    const meritMatch = pHtml.match(/<td><b>Merit:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
     
     const profile = {
       uid: uid,
       username: nameMatch ? nameMatch[1].trim() : null,
       posts_total: postsMatch ? parseInt(postsMatch[1]) : null,
+      merit_total: meritMatch ? parseInt(meritMatch[1]) : null,
       reg_date: regMatch ? regMatch[1].trim() : null,
       last_active: lastMatch ? lastMatch[1].trim() : null,
       updated_at: Date.now()
     };
-    // NON salviamo merit_total dallo scraping - viene calcolato da updateUserStats in brdbscore.js
-    // Questo evita di sovrascrivere i conteggi corretti con dati obsoleti da Bitcointalk
     const existing = await db.prepare('SELECT uid FROM user_profiles WHERE uid = ?').bind(uid).first();
     if (existing) {
       await db.prepare(
-        'UPDATE user_profiles SET username = ?, posts_total = ?, reg_date = ?, last_active = ?, updated_at = ? WHERE uid = ?'
-      ).bind(profile.username, profile.posts_total, profile.reg_date, profile.last_active, profile.updated_at, uid).run();
+        'UPDATE user_profiles SET username = ?, posts_total = ?, merit_total = ?, reg_date = ?, last_active = ?, updated_at = ? WHERE uid = ?'
+      ).bind(profile.username, profile.posts_total, profile.merit_total, profile.reg_date, profile.last_active, profile.updated_at, uid).run();
     } else {
       await db.prepare(
-        'INSERT INTO user_profiles (uid, username, posts_total, reg_date, last_active, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-      ).bind(uid, profile.username, profile.posts_total, profile.reg_date, profile.last_active, profile.updated_at).run();
+        'INSERT INTO user_profiles (uid, username, posts_total, merit_total, reg_date, last_active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).bind(uid, profile.username, profile.posts_total, profile.merit_total, profile.reg_date, profile.last_active, profile.updated_at).run();
     }
     
     return profile;
