@@ -1,6 +1,7 @@
+
 import { handleStatsRequest } from "./stats.js";
 // ═══════════════════════════════════════════════════════════════
-// BRDb Score Worker v3.0 - NO BITLIST
+// BRDb Score Worker v3.1
 // Endpoints:
 //   GET  /                          → Direct Bitcointalk scraping via Recent Posts and Recent Merits
 //   POST /cache                     → Save calculated BRDb data
@@ -586,7 +587,7 @@ export default {
   const _existingSnapshotToday = await env.brdb_users.prepare(
     'SELECT id FROM brdb_history WHERE uid = ? AND snapshot_date = ?'
   ).bind(uid, _snapshotTodayStr).first();
-  
+
   if (!_existingSnapshotToday) {
     await env.brdb_users.prepare(`
       INSERT OR IGNORE INTO brdb_history (
@@ -1216,7 +1217,7 @@ export default {
           );
           if (!res.ok) {
             console.warn(`[Populate] Page ${page} HTTP ${res.status}, stopping`);
-            break; 
+            break;
           }
           const data = await res.json();
           const posts = data.posts || [];
@@ -1296,39 +1297,39 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
   if (secret !== 'ace_brdb') return json({ error: 'Unauthorized' }, 401);
   const uid = u.searchParams.get('uid');
   if (!uid) return json({ error: 'Missing uid' }, 400);
-  
+
   try {
     const profile = await env.MERIT_DB.prepare('SELECT * FROM user_profiles WHERE uid = ?').bind(uid).first();
     if (!profile) return json({ error: 'User not found in MERIT_DB' }, 404);
-    
+
     const merits120 = await env.MERIT_DB.prepare(
       'SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE to_uid = ? AND collected_at > ?'
     ).bind(uid, Date.now() - 120*86400000).first();
-    
+
     const sent120 = await env.MERIT_DB.prepare(
       'SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE from_uid = ? AND collected_at > ?'
     ).bind(uid, Date.now() - 120*86400000).first();
-    
+
     const posts120 = profile.posts_120d || 0;
     const merit120 = merits120?.total || 0;
     const postsTotal = profile.posts_total || 0;
     const meritTotal = profile.merit_total || 0;
     const regDate = profile.reg_date || null;
-    
+
     // Calcola active_days120 da post_events
     const activeDaysResult = await env.MERIT_DB.prepare(
       'SELECT COUNT(DISTINCT DATE(timestamp)) as days FROM post_events WHERE uid = ? AND collected_at > ?'
     ).bind(uid, Date.now() - 120*86400000).first();
     const activeDays = activeDaysResult?.days || 0;
-    
+
     // Crea un array fittizio per il calcolo
     const postsArr = new Array(120).fill(0);
     for (let i = 0; i < Math.min(activeDays, 120); i++) postsArr[i] = 1;
-    
+
     const scores = calculateScores(postsTotal, meritTotal, posts120, merit120, postsArr, regDate ? new Date(regDate) : null, new Date(), sent120?.total || 0);
     const BRDb = calcBRDb(scores.Reputation, merit120, posts120, scores.badgeFormer, scores.isHistoricalUser, new Date(), meritTotal);
     const status = statusLabel(scores.promising, scores.badgeDormant, scores.badgeFormer, scores.badgeReactivated, scores.isHistoricalUser);
-    
+
     // Aggiorna brdb_users con TUTTI i campi calcolati
     await env.brdb_users.prepare(`
       INSERT OR REPLACE INTO brdb_users (
@@ -1357,7 +1358,7 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
         ?,
         ?, ?, ?, ?, ?,
         ?
-      ) 
+      )
     `).bind(
       uid, profile.username || null, BRDb, status, '#22c55e',
       scores.Reputation, scores.Reliability,
@@ -1378,7 +1379,7 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
       profile.local_board || null,
       Date.now()
     ).run();
-    
+
     // Salva anche nella history
     const today = new Date().toISOString().split('T')[0];
     await env.brdb_users.prepare(`
@@ -1394,7 +1395,7 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
       posts120, merit120, sent120?.total || 0,
       status, profile.local_board || null, 'recalc'
     ).run();
-    
+
     return json({ ok: true, uid, BRDb, status, postsTotal, meritTotal, posts120, merit120, history_saved: true });
   } catch (err) {
     return json({ error: err.message }, 500);
@@ -1994,23 +1995,23 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
       if (secret !== 'ace_brdb') return json({ error: 'Unauthorized' }, 401);
       const uid = u.searchParams.get('uid');
       if (!uid) return json({ error: 'Missing uid' }, 400);
-      
+
       try {
         const _snapshotDate = new Date().toISOString().split('T')[0];
         const user = await env.brdb_users.prepare(
           'SELECT * FROM brdb_users WHERE uid = ?'
         ).bind(uid).first();
-        
+
         if (!user) return json({ error: 'User not found' }, 404);
-        
+
         const _existingSnapshot = await env.brdb_users.prepare(
           'SELECT id FROM brdb_history WHERE uid = ? AND snapshot_date = ?'
         ).bind(uid, _snapshotDate).first();
-        
+
         if (_existingSnapshot) {
           return json({ ok: true, uid, snapshot_date: _snapshotDate, message: 'Snapshot already exists' });
         }
-        
+
         await env.brdb_users.prepare(`
           INSERT INTO brdb_history (
             uid, username, snapshot_date, BRDb, Reputation,
@@ -2023,7 +2024,7 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
           user.posts120 || 0, user.merit120 || 0, user.merits_sent120 || 0,
           user.status, user.local_board, 'manual_snapshot'
         ).run();
-        
+
         return json({ ok: true, uid, snapshot_date: _snapshotDate, BRDb: user.BRDb });
       } catch(err) {
         return json({ error: err.message }, 500);
@@ -2043,9 +2044,9 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
 // ═══════════════════════════════════════════════════════════════
 if (request.method === 'GET' && path.startsWith('/post/')) {
   const parts = path.split('/').filter(Boolean);
-  
+
   let post_id;
-  
+
   if (parts.length === 2) {
     post_id = parseInt(parts[1]);
   } else if (parts.length === 3) {
@@ -2053,15 +2054,15 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
   } else {
     return new Response('Invalid post link format', { status: 400 });
   }
-  
+
   if (!post_id) {
     return new Response('Invalid post_id', { status: 400 });
   }
-  
+
   try {
     // Cerca il post nel database
     const post = await env.MERIT_DB.prepare(`
-      SELECT 
+      SELECT
         p.uid,
         p.topic_id,
         p.board_id,
@@ -2073,16 +2074,16 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
       LEFT JOIN user_profiles u ON u.uid = p.uid
       WHERE p.post_id = ?
     `).bind(post_id).first();
-    
+
     if (!post) {
       return new Response(`Post #${post_id} not found`, { status: 404 });
     }
-    
+
     const [quotes, merits] = await Promise.all([
       env.MERIT_DB.prepare(`SELECT quoted_uid, quoted_name, quoted_by_name FROM quote_events WHERE post_id = ?`).bind(post_id).all(),
       env.MERIT_DB.prepare(`SELECT amount, from_uid, to_uid FROM merit_events WHERE msg_id = ?`).bind(post_id).all()
     ]);
-    
+
     const boardNames = {
       1: 'Bitcoin Discussion', 28: 'Italian', 56: 'Gambling', 67: 'Altcoin Discussion',
       153: 'Guide (Italiano)', 228: 'Gambling discussion', 89: 'India', 9: 'Off-topic'
@@ -2092,17 +2093,17 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
       day: '2-digit', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit'
     }) : 'Unknown date';
-    
+
     const btcLink = `https://bitcointalk.org/index.php?topic=${post.topic_id}.msg${post_id}#msg${post_id}`;
-    
+
     // 🔥 CHIAMA IL POST SCRAPER PER OTTENERE IL BODY
     let postBody = null;
     let fetchError = null;
-    
+
     try {
       const scraperUrl = `https://post-scraper.ace-d89.workers.dev/get-post-body?post_id=${post_id}&topic_id=${post.topic_id}`;
       const response = await fetch(scraperUrl);
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.body) {
@@ -2117,11 +2118,11 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
     } catch (err) {
       fetchError = err.message;
     }
-    
+
     // 🔥 LOG PER DEBUG
     console.log('[POST] postBody ricevuto:', !!postBody);
     console.log('[POST] fetchError:', fetchError);
-    
+
     // Se non abbiamo il body, mostra il link
     if (!postBody) {
       postBody = `<div style="text-align:center;padding:40px;color:#64748b">
@@ -2131,7 +2132,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
         <a href="${btcLink}" target="_blank" style="color:#60a5fa;display:inline-block;font-size:16px;text-decoration:underline;margin-top:12px">🔗 View on Bitcointalk →</a>
       </div>`;
     }
-    
+
     function escapeHtml(str) {
       if (!str) return '';
       return str.replace(/[&<>]/g, function(m) {
@@ -2141,7 +2142,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
         return m;
       });
     }
-    
+
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2204,7 +2205,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
     <h1>📄 Post Details</h1>
     <div></div>
   </div>
-  
+
   <div class="post-card">
     <div class="post-meta">
       <div class="author">
@@ -2217,39 +2218,39 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
       <div class="board-chip">📁 ${escapeHtml(boardName)}</div>
       <div class="post-date">📅 ${postDate}</div>
     </div>
-    
+
     <div class="post-title">${escapeHtml(post.title || 'Untitled')}</div>
-    
+
     <div id="post-content-area">
       <div class="post-content">${postBody}</div>
     </div>
   </div>
-  
+
   <div class="stats-grid">
     <div class="stat-card"><div class="stat-value" style="color:#3b82f6">${post.topic_id || '—'}</div><div class="stat-label">Topic ID</div></div>
     <div class="stat-card"><div class="stat-value" style="color:#60a5fa">${post_id}</div><div class="stat-label">Post ID</div></div>
     <div class="stat-card"><div class="stat-value" style="color:#22c55e">${merits.results?.length || 0}</div><div class="stat-label">Merits</div></div>
     <div class="stat-card"><div class="stat-value" style="color:#a855f7">${quotes.results?.length || 0}</div><div class="stat-label">Quotes</div></div>
   </div>
-  
+
   ${quotes.results && quotes.results.length > 0 ? `
   <div class="quotes-list">
     <div class="quotes-title">💬 QUOTES IN THIS POST</div>
     ${quotes.results.map(q => `<div class="quote-item"><span class="quote-badge">Quoted</span><span>${escapeHtml(q.quoted_name)}</span><span style="color:#475569;font-size:11px">by ${escapeHtml(q.quoted_by_name)}</span></div>`).join('')}
   </div>
   ` : ''}
-  
+
   ${merits.results && merits.results.length > 0 ? `
   <div class="merit-list">
     <div class="merit-title">⭐ MERITS ON THIS POST</div>
     ${merits.results.map(m => `<div class="merit-item"><span class="merit-badge">+${m.amount}</span><span>from UID ${m.from_uid} → to UID ${m.to_uid}</span></div>`).join('')}
   </div>
   ` : ''}
-  
+
   <div style="text-align:center; margin-top:24px">
     <a href="${btcLink}" target="_blank" class="btc-link">🔗 View on Bitcointalk →</a>
   </div>
-  
+
   <div class="footer"><span>✦ BRDb — Post Viewer ✦</span></div>
 </div>
 </body>
@@ -2259,7 +2260,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
       status: 200,
       headers: { 'Content-Type': 'text/html; charset=utf-8' }
     });
-    
+
   } catch (err) {
     console.error('GET /post error:', err);
     return new Response(`Error: ${err.message}`, { status: 500 });
@@ -2272,15 +2273,15 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
 if (path === '/test-post-body' && url.searchParams.get('post_id')) {
   const post_id = url.searchParams.get('post_id');
   const topic_id = url.searchParams.get('topic_id') || '';
-  
+
   try {
     const scraperUrl = `https://post-scraper.ace-d89.workers.dev/get-post-body?post_id=${post_id}&topic_id=${topic_id}`;
     const response = await fetch(scraperUrl);
     const data = await response.json();
-    
+
     return new Response(JSON.stringify({
       scraper_status: response.status,
-      scraper_data: data,
+      scraper_: data,
       has_body: !!data?.body,
       body_preview: data?.body?.substring(0, 200) || null
     }), {
@@ -2292,22 +2293,22 @@ if (path === '/test-post-body' && url.searchParams.get('post_id')) {
     });
   }
 }
-  
+
         // ═══════════════════════════════════════════════════════════════
     // GET /notifications/:uid — User Notification Center (Futuristic)
     // ═══════════════════════════════════════════════════════════════
     if (request.method === 'GET' && path.startsWith('/notifications/')) {
       const uid = path.split('/')[2];
       if (!uid) return json({ error: 'Missing uid' }, 400);
-      
+
       try {
         // 1. Merits received
         let meritsReceived = { results: [] };
         try {
           meritsReceived = await env.MERIT_DB.prepare(`
-            SELECT 
-              m.amount, 
-              m.from_uid, 
+            SELECT
+              m.amount,
+              m.from_uid,
               m.title as post_title,
               m.topic_id,
               m.msg_id,
@@ -2319,14 +2320,14 @@ if (path === '/test-post-body' && url.searchParams.get('post_id')) {
             LIMIT 25
           `).bind(uid).all();
         } catch(e) { console.log('Merits received error:', e.message); }
-        
+
         // 2. Merits sent
         let meritsSent = { results: [] };
         try {
           meritsSent = await env.MERIT_DB.prepare(`
-            SELECT 
-              m.amount, 
-              m.to_uid, 
+            SELECT
+              m.amount,
+              m.to_uid,
               m.title as post_title,
               m.topic_id,
               m.msg_id,
@@ -2338,12 +2339,12 @@ if (path === '/test-post-body' && url.searchParams.get('post_id')) {
             LIMIT 25
           `).bind(uid).all();
         } catch(e) { console.log('Merits sent error:', e.message); }
-        
+
         // 3. Posts written by user
         let myPosts = { results: [] };
         try {
           myPosts = await env.MERIT_DB.prepare(`
-            SELECT 
+            SELECT
               p.post_id,
               p.topic_id,
               p.title,
@@ -2362,7 +2363,7 @@ let quotesReceived = { results: [] };
 try {
   // Leggi direttamente dal database MERIT_DB
   const quotes = await env.MERIT_DB.prepare(`
-    SELECT 
+    SELECT
       q.*,
       p.title as post_title,
       p.board_id,
@@ -2373,7 +2374,7 @@ try {
     ORDER BY q.collected_at DESC
     LIMIT 50
   `).bind(uid).all();
-  
+
   quotesReceived.results = (quotes.results || []).map(q => ({
     quoted_by_name: q.quoted_by_name,
     quoted_by_uid: q.quoted_by_uid,
@@ -2386,12 +2387,12 @@ try {
     date: new Date(q.collected_at).toISOString().split('T')[0],
     timestamp: q.collected_at
   }));
-  
+
   console.log(`[QUOTES] Trovati ${quotesReceived.results.length} quote per ${uid} dal database MERIT_DB`);
-} catch(e) { 
+} catch(e) {
   console.log('Quotes error:', e.message);
 }
-        
+
         // Helper function to decode HTML entities
         function decodeHtmlEntities(str) {
           if (!str) return '';
@@ -2407,7 +2408,7 @@ try {
             .replace(/&#x2F;/g, '/')
             .replace(/&#39;/g, "'");
         }
-        
+
         // Helper function to get username
         async function getUsername(uid) {
           if (!uid) return null;
@@ -2420,7 +2421,7 @@ try {
             return null;
           }
         }
-        
+
         // Enrich meritsReceived with usernames
         const enrichedReceived = [];
         for (const merit of (meritsReceived.results || [])) {
@@ -2431,7 +2432,7 @@ try {
             timestamp: new Date(merit.date).getTime()
           });
         }
-        
+
         // Enrich meritsSent with usernames
         const enrichedSent = [];
         for (const merit of (meritsSent.results || [])) {
@@ -2442,13 +2443,13 @@ try {
             timestamp: new Date(merit.date).getTime()
           });
         }
-        
+
         // Enrich myPosts with timestamp
         const enrichedPosts = (myPosts.results || []).map(post => ({
           ...post,
           timestamp: new Date(post.date).getTime()
         }));
-        
+
         // Merge all events and sort by timestamp (newest first)
         const allEvents = [
           ...enrichedReceived.map(e => ({ ...e, eventType: 'merit_received' })),
@@ -2456,7 +2457,7 @@ try {
           ...enrichedPosts.map(e => ({ ...e, eventType: 'my_post' })),
           ...quotesReceived.results.map(e => ({ ...e, eventType: 'quote_received' })),
         ].sort((a, b) => b.timestamp - a.timestamp);
-        
+
         // COMPLETE BOARD MAP (same as global feed)
         const boardNames = {
           1: 'Bitcoin Discussion', 4: 'Bitcoin Technical Support', 5: 'Marketplace',
@@ -2532,7 +2533,7 @@ try {
           276: 'Trading dan Spekulasi', 277: 'Ekonomi, Politik, dan Budaya', 278: 'Topik Lainnya',
           279: 'Politics and society (Naija)', 280: 'Off-topic (Naija)'
         };
-        
+
         let html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2543,16 +2544,16 @@ try {
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Inter',system-ui,sans-serif;background:#03050a;color:#e8edf5;min-height:100vh}
-    
+
     /* Animated background */
     .bg-glow{position:fixed;top:0;left:0;right:0;bottom:0;overflow:hidden;z-index:0;pointer-events:none}
     .glow-1{position:absolute;top:-20%;left:-10%;width:60%;height:60%;background:radial-gradient(circle,#3b82f620 0%,transparent 70%);border-radius:50%;animation:float 20s ease-in-out infinite}
     .glow-2{position:absolute;bottom:-20%;right:-10%;width:50%;height:50%;background:radial-gradient(circle,#22c55e15 0%,transparent 70%);border-radius:50%;animation:float 25s ease-in-out infinite reverse}
     .glow-3{position:absolute;top:30%;right:20%;width:40%;height:40%;background:radial-gradient(circle,#f59e0b10 0%,transparent 70%);border-radius:50%;animation:float 18s ease-in-out infinite}
     @keyframes float{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(5%,5%) scale(1.05)}}
-    
+
     .container{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:32px 24px}
-    
+
     /* Header futuristic */
     .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:40px;flex-wrap:wrap;gap:20px}
     .header-left{display:flex;align-items:center;gap:20px}
@@ -2565,10 +2566,10 @@ try {
     .stat-icon{font-size:18px}
     .stat-value{font-weight:800;font-size:20px;background:linear-gradient(135deg,#fff,#94a3b8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
     .stat-label{font-size:11px;color:#64748b;margin-left:4px}
-    
+
     /* Feed */
     .feed{display:flex;flex-direction:column;gap:14px}
-    
+
     /* Futuristic card */
     .card{background:rgba(12,18,30,0.7);backdrop-filter:blur(12px);border:1px solid rgba(56,189,248,0.15);border-radius:24px;padding:18px 24px;transition:all .3s;position:relative;overflow:hidden}
     .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0;transition:opacity .3s}
@@ -2585,10 +2586,10 @@ try {
     .badge-quote{background:linear-gradient(135deg,#a855f715,#a855f708);border:1px solid #a855f740;color:#c084fc}
     .badge-quote::before{--glow:#a855f780}
     .user-quote{background:linear-gradient(135deg,#a855f720,#a855f708);border:1px solid #a855f750;color:#c084fc}
-    
+
     /* Row layout */
     .card-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px}
-    
+
     /* Badge futuristic */
     .badge{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border-radius:40px;font-size:13px;font-weight:600;letter-spacing:0.3px;position:relative;overflow:hidden}
     .badge::before{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,var(--glow),transparent);transition:left .5s}
@@ -2600,51 +2601,51 @@ try {
     .badge-post{background:linear-gradient(135deg,#3b82f615,#3b82f608);border:1px solid #3b82f640;color:#60a5fa}
     .badge-post::before{--glow:#3b82f680}
     .badge-icon{font-size:14px}
-    
+
     /* Amount */
     .amount{font-weight:800;font-size:16px;letter-spacing:-0.3px}
     .amount-received{color:#4ade80;text-shadow:0 0 8px #22c55e40}
     .amount-sent{color:#fbbf24;text-shadow:0 0 8px #f59e0b40}
-    
+
     /* Label */
     .label{font-size:12px;color:#64748b;font-weight:400;text-transform:lowercase}
-    
+
     /* Username futuristic */
     .user-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:40px;font-size:13px;font-weight:600}
     .user-received{background:linear-gradient(135deg,#22c55e20,#22c55e08);border:1px solid #22c55e50;color:#4ade80}
     .user-sent{background:linear-gradient(135deg,#f59e0b20,#f59e0b08);border:1px solid #f59e0b50;color:#fbbf24}
     .user-post{background:linear-gradient(135deg,#3b82f620,#3b82f608);border:1px solid #3b82f650;color:#60a5fa}
-    
+
     /* Post title */
     .post-title{font-weight:700;font-size:14px;color:#e2e8f0;text-decoration:none;transition:all .2s;border-bottom:1px solid transparent}
     .post-title:hover{color:#60a5fa;border-bottom-color:#60a5fa}
-    
+
     /* Board chip */
     .board-chip{background:rgba(30,41,59,0.8);backdrop-filter:blur(4px);padding:4px 12px;border-radius:20px;font-size:11px;font-weight:500;color:#94a3b8;border:1px solid #334155}
-    
+
     /* Date */
     .date-chip{display:inline-flex;align-items:center;gap:5px;background:rgba(0,0,0,0.3);padding:4px 12px;border-radius:20px;font-size:11px;color:#64748b;font-family:'Inter',monospace}
-    
+
     /* Separator */
     .sep{color:#334155;font-size:10px}
-    
+
     /* Empty state */
     .empty{text-align:center;padding:80px 20px;background:rgba(12,18,30,0.5);backdrop-filter:blur(12px);border-radius:32px;border:1px solid rgba(56,189,248,0.15)}
     .empty-icon{font-size:56px;margin-bottom:20px;opacity:0.5;filter:drop-shadow(0 0 20px #3b82f6)}
     .empty-text{color:#64748b;font-size:14px}
-    
+
     /* Footer */
     .footer{text-align:center;margin-top:40px;padding-top:24px;border-top:1px solid rgba(56,189,248,0.1);font-size:12px;color:#475569}
-    
+
     /* Animations */
     @keyframes fadeSlideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
     .card{animation:fadeSlideUp 0.4s cubic-bezier(0.2,0.9,0.4,1.1) forwards}
-    
+
     /* Scrollbar */
     ::-webkit-scrollbar{width:6px}
     ::-webkit-scrollbar-track{background:#0f172a}
     ::-webkit-scrollbar-thumb{background:#3b82f6;border-radius:3px}
-    
+
     @media(max-width:700px){.card-row{gap:8px 10px}.badge{padding:4px 12px;font-size:11px}.user-badge{padding:3px 10px;font-size:11px}.post-title{font-size:12px}}
   </style>
 </head>
@@ -2666,9 +2667,9 @@ try {
       <div class="stat-card"><span class="stat-icon">📤</span><span class="stat-value">${enrichedSent.length}</span><span class="stat-label">out</span></div>
     </div>
   </div>
-  
+
   <div class="feed">`;
-        
+
   if (allEvents.length === 0) {
   html += `
     <div class="empty">
@@ -2746,7 +2747,7 @@ try {
 </div>
 </body>
 </html>`;
-        
+
         // Helper function to escape HTML
         function escapeHtml(str) {
           if (!str) return '';
@@ -2757,12 +2758,12 @@ try {
             return m;
           });
         }
-        
+
         return new Response(html, {
           status: 200,
           headers: { ...cors, 'Content-Type': 'text/html; charset=utf-8' }
         });
-        
+
       } catch (err) {
         console.error('GET /notifications error:', err);
         return json({ error: err.message }, 500);
@@ -2774,18 +2775,18 @@ try {
     // ═══════════════════════════════════════════════════════════════
     if (request.method === 'GET' && path === '/global-feed-data') {
       return json({ error: 'Global feed disabled' }, 410);
-      
+
       /* REMOVED CODE:
       const since = parseInt(u.searchParams.get('since') || '0');
-      
+
       try {
         // Get events newer than 'since' timestamp
         let meritsReceived = { results: [] };
         try {
           meritsReceived = await env.MERIT_DB.prepare(`
-            SELECT 
-              m.amount, 
-              m.from_uid, 
+            SELECT
+              m.amount,
+              m.from_uid,
               m.to_uid,
               m.title as post_title,
               m.topic_id,
@@ -2799,11 +2800,11 @@ try {
             LIMIT 20
           `).bind(since).all();
         } catch(e) { console.log('Global merits error:', e.message); }
-        
+
         let posts = { results: [] };
         try {
           posts = await env.MERIT_DB.prepare(`
-            SELECT 
+            SELECT
               p.uid as author_uid,
               p.username as author_name,
               p.post_id,
@@ -2819,7 +2820,7 @@ try {
             LIMIT 20
           `).bind(since).all();
         } catch(e) { console.log('Global posts error:', e.message); }
-        
+
         async function getUsername(uid) {
           if (!uid) return null;
           try {
@@ -2831,14 +2832,14 @@ try {
             return `UID ${uid}`;
           }
         }
-        
+
         function decodeHtmlEntities(str) {
           if (!str) return '';
           return str.replace(/&#(\d+);/g, function(match, dec) {
             return String.fromCodePoint(parseInt(dec, 10));
           }).replace(/&amp;/g, '&');
         }
-        
+
         const enrichedMerits = [];
         for (const merit of (meritsReceived.results || [])) {
           const fromUsername = await getUsername(merit.from_uid);
@@ -2857,7 +2858,7 @@ try {
             timestamp: merit.collected_at
           });
         }
-        
+
         const enrichedPosts = (posts.results || []).map(post => ({
           type: 'post',
           author_uid: post.author_uid,
@@ -2869,32 +2870,32 @@ try {
           date: post.date,
           timestamp: post.collected_at
         }));
-        
+
         const allEvents = [...enrichedMerits, ...enrichedPosts]
           .sort((a, b) => a.timestamp - b.timestamp);
-        
+
         return json({ events: allEvents, lastTimestamp: since });
-        
+
       } catch (err) {
         return json({ error: err.message }, 500);
       }
     }
-    
+
     // ═══════════════════════════════════════════════════════════════
     // DISABLED: GET /global-feed — Global activity feed removed to save DB resources
     // ═══════════════════════════════════════════════════════════════
     if (request.method === 'GET' && path === '/global-feed') {
       return json({ error: 'Global feed disabled' }, 410);
-      
+
       /* REMOVED CODE:
       try {
         // 1. Last 30 merits (global)
         let meritsReceived = { results: [] };
         try {
           meritsReceived = await env.MERIT_DB.prepare(`
-            SELECT 
-              m.amount, 
-              m.from_uid, 
+            SELECT
+              m.amount,
+              m.from_uid,
               m.to_uid,
               m.title as post_title,
               m.topic_id,
@@ -2907,12 +2908,12 @@ try {
             LIMIT 30
           `).all();
         } catch(e) { console.log('Global merits error:', e.message); }
-        
+
         // 2. Last 30 posts (global)
         let posts = { results: [] };
         try {
           posts = await env.MERIT_DB.prepare(`
-            SELECT 
+            SELECT
               p.uid as author_uid,
               p.username as author_name,
               p.post_id,
@@ -2920,7 +2921,6 @@ try {
               p.title,
               p.board_id,
               p.collected_at,
-*/
               datetime(p.collected_at/1000, 'unixepoch', 'localtime') as date,
               'post' as type
             FROM post_events p
@@ -2928,7 +2928,7 @@ try {
             LIMIT 30
           `).all();
         } catch(e) { console.log('Global posts error:', e.message); }
-        
+*/
         // Helper to get username
         async function getUsername(uid) {
           if (!uid) return null;
@@ -2941,7 +2941,7 @@ try {
             return `UID ${uid}`;
           }
         }
-        
+
         // Helper to decode HTML entities
         function decodeHtmlEntities(str) {
           if (!str) return '';
@@ -2957,7 +2957,7 @@ try {
             .replace(/&#x2F;/g, '/')
             .replace(/&#39;/g, "'");
         }
-        
+
         // Enrich merits with usernames
         const enrichedMerits = [];
         for (const merit of (meritsReceived.results || [])) {
@@ -2970,19 +2970,19 @@ try {
             timestamp: merit.collected_at
           });
         }
-        
+
         // Enrich posts
         const enrichedPosts = (posts.results || []).map(post => ({
           ...post,
           timestamp: post.collected_at
         }));
-        
+
         // Merge and sort
         const allEvents = [
           ...enrichedMerits.map(e => ({ ...e, eventType: 'merit_received' })),
           ...enrichedPosts.map(e => ({ ...e, eventType: 'post' }))
         ].sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
-        
+
         // COMPLETE BOARD MAP (all 280+ boards)
         const boardNames = {
           1: 'Bitcoin Discussion', 4: 'Bitcoin Technical Support', 5: 'Marketplace',
@@ -3058,7 +3058,7 @@ try {
           276: 'Trading dan Spekulasi', 277: 'Ekonomi, Politik, dan Budaya', 278: 'Topik Lainnya',
           279: 'Politics and society (Naija)', 280: 'Off-topic (Naija)'
         };
-        
+
         // Convert events to JSON for JavaScript
         const eventsJson = JSON.stringify(allEvents.map(e => ({
           type: e.eventType,
@@ -3078,7 +3078,7 @@ try {
           date: e.date,
           timestamp: e.timestamp
         })));
-        
+
         let html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3089,15 +3089,15 @@ try {
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Inter',system-ui,sans-serif;background:#03050a;color:#e8edf5;min-height:100vh}
-    
+
     .bg-glow{position:fixed;top:0;left:0;right:0;bottom:0;overflow:hidden;z-index:0;pointer-events:none}
     .glow-1{position:absolute;top:-20%;left:-10%;width:60%;height:60%;background:radial-gradient(circle,#3b82f620 0%,transparent 70%);border-radius:50%;animation:float 20s ease-in-out infinite}
     .glow-2{position:absolute;bottom:-20%;right:-10%;width:50%;height:50%;background:radial-gradient(circle,#22c55e15 0%,transparent 70%);border-radius:50%;animation:float 25s ease-in-out infinite reverse}
     .glow-3{position:absolute;top:30%;right:20%;width:40%;height:40%;background:radial-gradient(circle,#f59e0b10 0%,transparent 70%);border-radius:50%;animation:float 18s ease-in-out infinite}
     @keyframes float{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(5%,5%) scale(1.05)}}
-    
+
     .container{position:relative;z-index:1;max-width:1000px;margin:0 auto;padding:32px 24px}
-    
+
     .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:40px;flex-wrap:wrap;gap:20px}
     .header-left{display:flex;align-items:center;gap:20px}
     .back-btn{display:flex;align-items:center;gap:8px;color:#60a5fa;text-decoration:none;font-weight:500;font-size:14px;padding:10px 20px;background:rgba(15,23,42,0.6);backdrop-filter:blur(10px);border:1px solid rgba(96,165,250,0.3);border-radius:40px;transition:all .3s}
@@ -3109,9 +3109,9 @@ try {
     .stat-icon{font-size:18px}
     .stat-value{font-weight:800;font-size:20px;background:linear-gradient(135deg,#fff,#94a3b8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
     .stat-label{font-size:11px;color:#64748b;margin-left:4px}
-    
+
     .feed{display:flex;flex-direction:column;gap:14px}
-    
+
     .card{background:rgba(12,18,30,0.7);backdrop-filter:blur(12px);border:1px solid rgba(56,189,248,0.15);border-radius:24px;padding:18px 24px;transition:all .3s;position:relative;overflow:hidden;animation:fadeSlideUp 0.4s cubic-bezier(0.2,0.9,0.4,1.1) forwards}
     .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0;transition:opacity .3s}
     .card::after{content:'';position:absolute;bottom:0;right:0;width:100px;height:100px;background:radial-gradient(circle,var(--accent) 0%,transparent 70%);opacity:0;transition:opacity .3s;pointer-events:none}
@@ -3120,13 +3120,13 @@ try {
     .card:hover::after{opacity:0.08}
     .card-merit-received{--accent:#22c55e}
     .card-post{--accent:#3b82f6}
-    
+
     .card-new{animation:flash 0.5s ease-out}
     @keyframes flash{0%{background:rgba(34,197,94,0.3);border-color:#22c55e}100%{background:rgba(12,18,30,0.7);border-color:rgba(56,189,248,0.15)}}
     @keyframes fadeSlideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
-    
+
     .card-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px}
-    
+
     .badge{display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border-radius:40px;font-size:13px;font-weight:600;letter-spacing:0.3px;position:relative;overflow:hidden}
     .badge::before{content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,var(--glow),transparent);transition:left .5s}
     .badge:hover::before{left:100%}
@@ -3135,36 +3135,36 @@ try {
     .badge-post{background:linear-gradient(135deg,#3b82f615,#3b82f608);border:1px solid #3b82f640;color:#60a5fa}
     .badge-post::before{--glow:#3b82f680}
     .badge-icon{font-size:14px}
-    
+
     .amount{font-weight:800;font-size:16px;letter-spacing:-0.3px;color:#4ade80;text-shadow:0 0 8px #22c55e40}
     .label{font-size:12px;color:#64748b;font-weight:400;text-transform:lowercase}
-    
+
     .user-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 14px;border-radius:40px;font-size:13px;font-weight:600}
     .user-badge a{color:inherit;text-decoration:none}
     .user-badge a:hover{text-decoration:underline}
     .user-received{background:linear-gradient(135deg,#22c55e20,#22c55e08);border:1px solid #22c55e50;color:#4ade80}
-    
+
     .post-title{font-weight:700;font-size:14px;color:#e2e8f0;text-decoration:none;transition:all .2s;border-bottom:1px solid transparent}
     .post-title:hover{color:#60a5fa;border-bottom-color:#60a5fa}
-    
+
     .board-chip{background:rgba(30,41,59,0.8);backdrop-filter:blur(4px);padding:4px 12px;border-radius:20px;font-size:11px;font-weight:500;color:#94a3b8;border:1px solid #334155}
     .date-chip{display:inline-flex;align-items:center;gap:5px;background:rgba(0,0,0,0.3);padding:4px 12px;border-radius:20px;font-size:11px;color:#64748b}
     .sep{color:#334155;font-size:10px}
-    
+
     .empty{text-align:center;padding:80px 20px;background:rgba(12,18,30,0.5);backdrop-filter:blur(12px);border-radius:32px;border:1px solid rgba(56,189,248,0.15)}
     .empty-icon{font-size:56px;margin-bottom:20px;opacity:0.5;filter:drop-shadow(0 0 20px #3b82f6)}
     .empty-text{color:#64748b;font-size:14px}
-    
+
     .footer{text-align:center;margin-top:40px;padding-top:24px;border-top:1px solid rgba(56,189,248,0.1);font-size:12px;color:#475569}
-    
+
     .refresh-indicator{position:fixed;bottom:20px;right:20px;background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);padding:8px 16px;border-radius:40px;font-size:11px;color:#64748b;border:1px solid #334155;z-index:100;display:flex;align-items:center;gap:8px}
     .refresh-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-    
+
     ::-webkit-scrollbar{width:6px}
     ::-webkit-scrollbar-track{background:#0f172a}
     ::-webkit-scrollbar-thumb{background:#3b82f6;border-radius:3px}
-    
+
     @media(max-width:700px){.card-row{gap:8px 10px}.badge{padding:4px 12px;font-size:11px}.user-badge{padding:3px 10px;font-size:11px}.post-title{font-size:12px}}
   </style>
 </head>
@@ -3185,9 +3185,9 @@ try {
       <div class="stat-card"><span class="stat-icon">📝</span><span class="stat-value" id="postCount">${allEvents.filter(e => e.eventType === 'post').length}</span><span class="stat-label">posts</span></div>
     </div>
   </div>
-  
+
   <div class="feed" id="feedContainer">`;
-        
+
         if (allEvents.length === 0) {
           html += `
     <div class="empty" id="emptyState">
@@ -3229,7 +3229,7 @@ try {
             }
           }
         }
-        
+
         html += `
   </div>
   <div class="footer">
@@ -3245,7 +3245,7 @@ try {
   const boardNames = ${JSON.stringify(boardNames)};
   let lastTimestamp = ${allEvents.length > 0 ? Math.max(...allEvents.map(e => e.timestamp)) : 0};
   let refreshInterval;
-  
+
   function decodeHtmlEntities(str) {
     if (!str) return '';
     return str
@@ -3260,11 +3260,11 @@ try {
       .replace(/&#x2F;/g, '/')
       .replace(/&#39;/g, "'");
   }
-  
+
   function formatDate(dateStr) {
     return dateStr.split(' ')[0];
   }
-  
+
   function createCard(event) {
     if (event.type === 'merit_received') {
       return \`
@@ -3298,26 +3298,26 @@ try {
     </div>\`;
     }
   }
-  
+
   // Global feed disabled - removed to save DB resources
   /*
   async function fetchNewEvents() {
     try {
       const response = await fetch('/global-feed-data?since=' + lastTimestamp);
       const newEvents = await response.json();
-      
+
       if (newEvents.events && newEvents.events.length > 0) {
         const feedContainer = document.getElementById('feedContainer');
         const emptyState = document.getElementById('emptyState');
-        
+
         if (emptyState) emptyState.remove();
-        
+
         for (const event of newEvents.events.reverse()) {
           const cardHtml = createCard(event);
           feedContainer.insertAdjacentHTML('afterbegin', cardHtml);
           lastTimestamp = Math.max(lastTimestamp, event.timestamp);
         }
-        
+
         // Update counts
         const meritCountEl = document.getElementById('meritCount');
         const postCountEl = document.getElementById('postCount');
@@ -3325,7 +3325,7 @@ try {
         const currentPosts = document.querySelectorAll('.card-post').length;
         if (meritCountEl) meritCountEl.textContent = currentMerits;
         if (postCountEl) postCountEl.textContent = currentPosts;
-        
+
         // Remove animation class
         setTimeout(() => {
           document.querySelectorAll('.card-new').forEach(card => {
@@ -3337,9 +3337,9 @@ try {
       console.log('Fetch error:', e);
     }
   }
-  
+
   refreshInterval = setInterval(fetchNewEvents, 10000);
-  
+
   window.addEventListener('beforeunload', () => {
     if (refreshInterval) clearInterval(refreshInterval);
   });
@@ -3347,7 +3347,7 @@ try {
 </script>
 </body>
 </html>`;
-        
+
         function escapeHtml(str) {
           if (!str) return '';
           return str.replace(/[&<>]/g, function(m) {
@@ -3357,18 +3357,13 @@ try {
             return m;
           });
         }
-        
+
         return new Response(html, {
           status: 200,
           headers: { ...cors, 'Content-Type': 'text/html; charset=utf-8' }
         });
-        
-      } catch (err) {
-        console.error('GET /global-feed error:', err);
-        return json({ error: err.message }, 500);
-      }
     }
-    
+
 // ═══════════════════════════════════════════════════════════════
 // GET /post/:post_id — Visualizza un post specifico
 // Estrae il topic_id automaticamente da Bitcointalk
@@ -3378,11 +3373,11 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
   if (!post_id) {
     return new Response('Missing post_id', { status: 400 });
   }
-  
+
   try {
     // 1. CERCA IL POST NEL DATABASE
     let post = await env.MERIT_DB.prepare(`
-      SELECT 
+      SELECT
         p.uid,
         p.topic_id,
         p.board_id,
@@ -3394,9 +3389,9 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
       LEFT JOIN user_profiles u ON u.uid = p.uid
       WHERE p.post_id = ?
     `).bind(post_id).first();
-    
+
     let topic_id = post?.topic_id;
-    
+
     // 2. SE NON TROVATO topic_id, PROVA A ESTRARLO DA BITCOINTALK
     if (!topic_id) {
       try {
@@ -3404,12 +3399,12 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
         // Usa il feed recent per trovare il post
         const searchUrl = `https://bitcointalk.org/index.php?action=recent;start=0`;
         const searchRes = await fetch(searchUrl, {
-          headers: { 
+          headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
           }
         });
-        
+
         if (searchRes.ok) {
           const searchHtml = await searchRes.text();
           // Cerca il post nella pagina recent
@@ -3423,19 +3418,19 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
         console.log('Error searching topic_id:', e.message);
       }
     }
-    
+
     // 3. SE NON TROVATO topic_id, PROVA DIRETTAMENTE CON L'URL DEL POST
     if (!topic_id) {
       // Prova a fare fetch del post direttamente
       const directUrl = `https://bitcointalk.org/index.php?topic=0.msg${post_id}#msg${post_id}`;
       try {
         const directRes = await fetch(directUrl, {
-          headers: { 
+          headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
           }
         });
-        
+
         if (directRes.ok) {
           const html = await directRes.text();
           // Cerca il topic_id nella pagina
@@ -3448,15 +3443,15 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
         console.log('Error fetching direct:', e.message);
       }
     }
-    
+
     // 4. SE ANCORA NON TROVATO, RESTITUISCI ERRORE
     if (!topic_id) {
       return new Response(
-        `Post #${post_id} not found. Could not determine topic_id.`, 
+        `Post #${post_id} not found. Could not determine topic_id.`,
         { status: 404 }
       );
     }
-    
+
     // 5. SE IL POST NON ESISTEVA NEL DB, CREA UN RECORD TEMPORANEO
     if (!post) {
       post = {
@@ -3469,13 +3464,13 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
         author_name: 'Unknown'
       };
     }
-    
+
     // 6. RECUPERA QUOTE E MERITI
     const [quotes, merits] = await Promise.all([
       env.MERIT_DB.prepare(`SELECT quoted_uid, quoted_name, quoted_by_name FROM quote_events WHERE post_id = ?`).bind(post_id).all(),
       env.MERIT_DB.prepare(`SELECT amount, from_uid, to_uid FROM merit_events WHERE msg_id = ?`).bind(post_id).all()
     ]);
-    
+
     // 7. MAPPA BOARD
     const boardNames = {
       1: 'Bitcoin Discussion', 28: 'Italian', 56: 'Gambling', 67: 'Altcoin Discussion',
@@ -3486,17 +3481,17 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
       day: '2-digit', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit'
     }) : 'Unknown date';
-    
+
     const btcLink = `https://bitcointalk.org/index.php?topic=${topic_id}.msg${post_id}#msg${post_id}`;
-    
+
     // 8. FETCH DEL BODY DEL POST
     let postBody = null;
     let fetchError = null;
-    
+
     try {
       const postUrl = `https://bitcointalk.org/index.php?topic=${topic_id}.msg${post_id}#msg${post_id}`;
       const res = await fetch(postUrl, {
-        headers: { 
+        headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.5',
@@ -3505,14 +3500,14 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
           'Upgrade-Insecure-Requests': '1'
         }
       });
-      
+
       if (res.ok) {
         const html = await res.text();
-        
+
         // Cerca il post con l'ID specifico
         const msgId = `id="msg_${post_id}"`;
         const msgStart = html.indexOf(msgId);
-        
+
         if (msgStart !== -1) {
           let start = html.lastIndexOf('<div', msgStart);
           if (start !== -1) {
@@ -3538,7 +3533,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
             postBody = html.substring(divStart + 18, i - 6);
           }
         }
-        
+
         if (postBody) {
           postBody = postBody.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
           postBody = postBody.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '');
@@ -3549,7 +3544,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
     } catch (err) {
       fetchError = err.message;
     }
-    
+
     // 9. FUNZIONE ESCAPE HTML
     function escapeHtml(str) {
       if (!str) return '';
@@ -3560,7 +3555,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
         return m;
       });
     }
-    
+
     // 10. GENERA HTML (lo stesso che avevi prima)
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -3624,7 +3619,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
     <h1>📄 Post Details</h1>
     <div></div>
   </div>
-  
+
   <div class="post-card">
     <div class="post-meta">
       <div class="author">
@@ -3637,41 +3632,41 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
       <div class="board-chip">📁 ${escapeHtml(boardName)}</div>
       <div class="post-date">📅 ${postDate}</div>
     </div>
-    
+
     <div class="post-title">${escapeHtml(post.title || 'Untitled')}</div>
-    
+
     <div id="post-content-area">
-      ${postBody ? `<div class="post-content">${postBody}</div>` : 
+      ${postBody ? `<div class="post-content">${postBody}</div>` :
         `<div class="error-message">❌ Failed to load post content: ${fetchError || 'Unknown error'}<br><br>
         <a href="${btcLink}" target="_blank" style="color:#3b82f6;display:inline-block">Open on Bitcointalk →</a></div>`}
     </div>
   </div>
-  
+
   <div class="stats-grid">
     <div class="stat-card"><div class="stat-value" style="color:#3b82f6">${topic_id || '—'}</div><div class="stat-label">Topic ID</div></div>
     <div class="stat-card"><div class="stat-value" style="color:#60a5fa">${post_id}</div><div class="stat-label">Post ID</div></div>
     <div class="stat-card"><div class="stat-value" style="color:#22c55e">${merits.results?.length || 0}</div><div class="stat-label">Merits</div></div>
     <div class="stat-card"><div class="stat-value" style="color:#a855f7">${quotes.results?.length || 0}</div><div class="stat-label">Quotes</div></div>
   </div>
-  
+
   ${quotes.results && quotes.results.length > 0 ? `
   <div class="quotes-list">
     <div class="quotes-title">💬 QUOTES IN THIS POST</div>
     ${quotes.results.map(q => `<div class="quote-item"><span class="quote-badge">Quoted</span><span>${escapeHtml(q.quoted_name)}</span><span style="color:#475569;font-size:11px">by ${escapeHtml(q.quoted_by_name)}</span></div>`).join('')}
   </div>
   ` : ''}
-  
+
   ${merits.results && merits.results.length > 0 ? `
   <div class="merit-list">
     <div class="merit-title">⭐ MERITS ON THIS POST</div>
     ${merits.results.map(m => `<div class="merit-item"><span class="merit-badge">+${m.amount}</span><span>from UID ${m.from_uid} → to UID ${m.to_uid}</span></div>`).join('')}
   </div>
   ` : ''}
-  
+
   <div style="text-align:center; margin-top:24px">
     <a href="${btcLink}" target="_blank" class="btc-link">🔗 View on Bitcointalk →</a>
   </div>
-  
+
   <div class="footer"><span>✦ BRDb — Post Viewer ✦</span></div>
 </div>
 </body>
@@ -3681,7 +3676,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
       status: 200,
       headers: { 'Content-Type': 'text/html; charset=utf-8' }
     });
-    
+
   } catch (err) {
     console.error('GET /post error:', err);
     return new Response(`Error: ${err.message}`, { status: 500 });
@@ -3718,7 +3713,7 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
     if (request.method === 'GET' && path === '/debug-profile') {
       const testUid = u.searchParams.get('uid');
       if (!testUid) return json({ error: 'Missing uid' }, 400);
-      
+
       try {
         // Scraping diretto del profilo Bitcointalk
         const profileRes = await fetch(`https://bitcointalk.org/index.php?action=profile;u=${testUid}`, {
@@ -3729,32 +3724,32 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
             'Referer': 'https://bitcointalk.org/'
           }
         });
-        
+
         let bitcointalkData = null;
         let scrapeError = null;
-        
+
         if (profileRes.ok) {
           const profileHtml = await profileRes.text();
           bitcointalkData = parseBitcointalkProfile(profileHtml);
         } else {
           scrapeError = `HTTP ${profileRes.status}`;
         }
-        
+
         // Dati dal DB user_profiles
         const dbProfile = await env.MERIT_DB.prepare(
           'SELECT * FROM user_profiles WHERE uid = ?'
         ).bind(testUid).first();
-        
+
         // Dati dal DB brdb_users
         const dbBrdb = await env.brdb_users.prepare(
           'SELECT * FROM brdb_users WHERE uid = ?'
         ).bind(testUid).first();
-        
+
         // Merit events recenti
         const recentMerits = await env.MERIT_DB.prepare(
           'SELECT * FROM merit_events WHERE to_uid = ? OR from_uid = ? ORDER BY timestamp DESC LIMIT 10'
         ).bind(testUid, testUid).all();
-        
+
         return json({
           uid: testUid,
           bitcointalk_scraped: bitcointalkData,
@@ -4005,14 +4000,14 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
     // ═══════════════════════════════════════════════════════════════
     if (request.method === 'GET' && path === '/test-quotes' && u.searchParams.get('uid')) {
   const uid = u.searchParams.get('uid');
-  
+
   // URL hardcoded per test
   const POST_SCRAPER_URL = 'https://post-scraper.ace-d89.workers.dev';
-  
+
   try {
     const quotesRes = await fetch(`${POST_SCRAPER_URL}/quotes-for-user?uid=${uid}`);
     const quotesData = await quotesRes.json();
-    
+
     return json({
       success: true,
       post_scraper_url: POST_SCRAPER_URL,
@@ -4027,22 +4022,22 @@ if (request.method === 'GET' && path.startsWith('/post/')) {
         // ═══════════════════════════════════════════════════════════════
     // GET /user?uid=X — single user from D1
     // ═══════════════════════════════════════════════════════════════
-    
+
 if (request.method === 'GET' && path === '/user') {
   const uid = u.searchParams.get('uid');
   if (!uid) return json({ error: 'Missing uid' }, 400);
-  
+
   const row = await env.MERIT_DB.prepare(
     'SELECT * FROM user_profiles WHERE uid = ?'
   ).bind(uid).first();
-  
+
   if (!row) return json({ found: false }, 404);
-  
+
   // Prendi anche BRDb e score da brdb_users
   const brdbRow = await env.brdb_users.prepare(
     'SELECT BRDb, Reputation, status, color, impact_all, impact_120, posts120, merit120, merits_sent120, avg_all, avg_120, active_days120, consistency_score, recent_merit_ratio, recent_post_ratio, merit_rate_multiplier, post_rate_multiplier, recent_merit_rate, historical_merit_rate, recent_post_rate, historical_post_rate, merit_sent_received_ratio, Reliability FROM brdb_users WHERE uid = ?'
   ).bind(uid).first();
-  
+
   const merged = {
     ...row,
     BRDb: brdbRow?.BRDb || 0,
@@ -4069,8 +4064,8 @@ if (request.method === 'GET' && path === '/user') {
     merit_sent_received_ratio: brdbRow?.merit_sent_received_ratio || 0,
     Reliability: brdbRow?.Reliability || 0,
   };
-  
-  return json({ found: true, data: merged });
+
+  return json({ found: true,  merged });
 }
 
     // ═══════════════════════════════════════════════════════════════
@@ -4123,7 +4118,7 @@ if (request.method === 'GET' && path === '/user') {
 </head>
 <body>
   <div class="user-card">
-    ${avatarBase64 ? `<img src="data:${avatarMime};base64,${avatarBase64}" alt="Avatar">` : ''}
+    ${avatarBase64 ? `<img src="${avatarMime};base64,${avatarBase64}" alt="Avatar">` : ''}
     <h1>${username}</h1>
     <p>UID: ${userId}</p>
     ${localBoard ? `<span class="local-board">🌍 ${localBoard}</span>` : ''}
@@ -4427,19 +4422,28 @@ async function scrapeAndSave(user, dateMin120, today, APIkey, env) {
     postsTotal = profileData.posts || 0;
     console.log(`[Cron] uid ${user.uid} scraped posts=${postsTotal} from Bitcointalk`);
   }
-  
-  // CALCOLO MERIT TOTALI DA merit_events (SEMPRE, per entrambi gli utenti)
-  const meritReceivedResult = await env.MERIT_DB.prepare(
-    'SELECT SUM(amount) as total FROM merit_events WHERE to_uid = ?'
-  ).bind(user.uid).first();
-  const meritTotal = meritReceivedResult?.total || 0;
-  
+
+  // CALCOLO MERIT TOTALI DA BITCOINTALK PROFILE (come richiesto)
+  let meritTotal = profileData.meritTotal || 0;
+  let meritsSentTotal = 0; // Bitcointalk non mostra merit sent total nel profilo, lo calcoliamo dagli eventi
+
+  // Se Bitcointalk è down o non abbiamo meritTotal, fallback su merit_events
+  if (!meritTotal && profileData.bitcointalkDown) {
+    const meritReceivedResult = await env.MERIT_DB.prepare(
+      'SELECT SUM(amount) as total FROM merit_events WHERE to_uid = ?'
+    ).bind(user.uid).first();
+    meritTotal = meritReceivedResult?.total || 0;
+    console.log(`[Cron] uid ${user.uid} using cached merit_total=${meritTotal} (Bitcointalk down)`);
+  } else {
+    console.log(`[Cron] uid ${user.uid} scraped merit_total=${meritTotal} from Bitcointalk profile`);
+  }
+
+  // Calcola merits_sent_total dagli eventi (unico modo per averlo)
   const meritSentResult = await env.MERIT_DB.prepare(
     'SELECT SUM(amount) as total FROM merit_events WHERE from_uid = ?'
   ).bind(user.uid).first();
-  const meritsSentTotal = meritSentResult?.total || 0;
-  
-  console.log(`[Cron] uid ${user.uid} calculated merit_total=${meritTotal}, merits_sent_total=${meritsSentTotal} from merit_events`);
+  meritsSentTotal = meritSentResult?.total || 0;
+  console.log(`[Cron] uid ${user.uid} calculated merits_sent_total=${meritsSentTotal} from merit_events`);
   // Usa merit_earned (da Loyce) se disponibile, altrimenti merit_total
   // merit_earned esclude gli airdrop del 2017 che falsavano i calcoli
   const existingMeritEarned = user.merit_earned != null ? user.merit_earned : null;
@@ -4556,7 +4560,7 @@ try {
   const _existingSnapshotToday = await env.brdb_users.prepare(
     'SELECT id FROM brdb_history WHERE uid = ? AND snapshot_date = ?'
   ).bind(uid, _snapshotTodayStr).first();
-  
+
   if (!_existingSnapshotToday) {
     await env.brdb_users.prepare(`
       INSERT OR IGNORE INTO brdb_history (
@@ -4846,6 +4850,7 @@ function parseBitcointalkProfile(html) {
   return {
     name:       getProfileNameFromHtml(html),
     posts:      getProfileNumberFromHtml(html, 'Posts:'),
+    merit:      getProfileMeritFromHtml(html),
     regDate:    getProfileDateFromHtml(html, 'Date Registered:'),
     lastActive: getProfileDateFromHtml(html, 'Last Active:')
   };
@@ -4855,13 +4860,13 @@ function parseBitcointalkProfile(html) {
 // ═══════════════════════════════════════════════════════════════
 // BADGE DATA URLs — embedded SVGs
 // ═══════════════════════════════════════════════════════════════
-const BADGE_SENDER_GOLD     = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0ZGRTQ0RCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNCODg2MEIiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNGRkQ3MDA7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojRkZENzAwO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMTQgNDgsMjQgNDQsMjQgNDQsMzIgMzYsMzIgMzYsMjQgMzIsMjQiIGZpbGw9IiNGRkQ3MDAiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNGRkQ3MDAiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzE8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5TRU5ERVI8L3RleHQ+CgogIDwhLS0gQ29ybmVyIGRvdHMgLS0+CiAgPGNpcmNsZSBjeD0iMjQiIGN5PSI1OCIgcj0iMS41IiBmaWxsPSIjRkZENzAwIiBvcGFjaXR5PSIwLjUiLz4KICA8Y2lyY2xlIGN4PSI1NiIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNGRkQ3MDAiIG9wYWNpdHk9IjAuNSIvPgo8L3N2Zz4=';
-const BADGE_SENDER_SILVER   = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0U4RThFOCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM4MDgwODAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNDMEMwQzA7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojQzBDMEMwO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMTQgNDgsMjQgNDQsMjQgNDQsMzIgMzYsMzIgMzYsMjQgMzIsMjQiIGZpbGw9IiNDMEMwQzAiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNDMEMwQzAiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNDMEMwQzAiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzI8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5TRU5ERVI8L3RleHQ+CgogIDwhLS0gQ29ybmVyIGRvdHMgLS0+CiAgPGNpcmNsZSBjeD0iMjQiIGN5PSI1OCIgcj0iMS41IiBmaWxsPSIjQzBDMEMwIiBvcGFjaXR5PSIwLjUiLz4KICA8Y2lyY2xlIGN4PSI1NiIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNDMEMwQzAiIG9wYWNpdHk9IjAuNSIvPgo8L3N2Zz4=';
-const BADGE_SENDER_BRONZE   = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0U4QTg1QSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM4QjQ1MTMiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNDRDdGMzI7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojQ0Q3RjMyO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMTQgNDgsMjQgNDQsMjQgNDQsMzIgMzYsMzIgMzYsMjQgMzIsMjQiIGZpbGw9IiNDRDdGMzIiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNDRDdGMzIiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNDRDdGMzIiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzM8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5TRU5ERVI8L3RleHQ+CgogIDwhLS0gQ29ybmVyIGRvdHMgLS0+CiAgPGNpcmNsZSBjeD0iMjQiIGN5PSI1OCIgcj0iMS41IiBmaWxsPSIjQ0Q3RjMyIiBvcGFjaXR5PSIwLjUiLz4KICA8Y2lyY2xlIGN4PSI1NiIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNDRDdGMzIiIG9wYWNpdHk9IjAuNSIvPgo8L3N2Zz4=';
-const BADGE_RECEIVER_GOLD   = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0ZGRTQ0RCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNCODg2MEIiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNGRkQ3MDA7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojRkZENzAwO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMzIgNDgsMjIgNDQsMjIgNDQsMTQgMzYsMTQgMzYsMjIgMzIsMjIiIGZpbGw9IiNGRkQ3MDAiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNGRkQ3MDAiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzE8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5SRUNFSVZFUjwvdGV4dD4KCiAgPCEtLSBDb3JuZXIgZG90cyAtLT4KICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNGRkQ3MDAiIG9wYWNpdHk9IjAuNSIvPgogIDxjaXJjbGUgY3g9IjU2IiBjeT0iNTgiIHI9IjEuNSIgZmlsbD0iI0ZGRDcwMCIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPg==';
-const BADGE_RECEIVER_SILVER = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0U4RThFOCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM4MDgwODAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNDMEMwQzA7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojQzBDMEMwO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMzIgNDgsMjIgNDQsMjIgNDQsMTQgMzYsMTQgMzYsMjIgMzIsMjIiIGZpbGw9IiNDMEMwQzAiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNDMEMwQzAiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNDMEMwQzAiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzI8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5SRUNFSVZFUjwvdGV4dD4KCiAgPCEtLSBDb3JuZXIgZG90cyAtLT4KICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNDMEMwQzAiIG9wYWNpdHk9IjAuNSIvPgogIDxjaXJjbGUgY3g9IjU2IiBjeT0iNTgiIHI9IjEuNSIgZmlsbD0iI0MwQzBDMCIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPg==';
-const BADGE_RECEIVER_BRONZE = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0U4QTg1QSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM4QjQ1MTMiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNDRDdGMzI7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojQ0Q3RjMyO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMzIgNDgsMjIgNDQsMjIgNDQsMTQgMzYsMTQgMzYsMjIgMzIsMjIiIGZpbGw9IiNDRDdGMzIiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNDRDdGMzIiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNDRDdGMzIiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzM8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5SRUNFSVZFUjwvdGV4dD4KCiAgPCEtLSBDb3JuZXIgZG90cyAtLT4KICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNDRDdGMzIiIG9wYWNpdHk9IjAuNSIvPgogIDxjaXJjbGUgY3g9IjU2IiBjeT0iNTgiIHI9IjEuNSIgZmlsbD0iI0NEN0YzMiIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPg==';
-const BADGE_MS              = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCA5MCIgd2lkdGg9IjgwIiBoZWlnaHQ9IjkwIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ic2hpZWxkR3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I2ZiYmYyNCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNkOTc3MDYiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmYmJmMjQ7c3RvcC1vcGFjaXR5OjAuMTUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZmJiZjI0O3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIiIHJlc3VsdD0iYmx1ciIvPgogICAgICA8ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49ImJsdXIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+CiAgICA8L2ZpbHRlcj4KICA8L2RlZnM+CgogIDwhLS0gU2hpZWxkIGJvcmRlciAoc2xpZ2h0bHkgbGFyZ2VyLCBnb2xkKSAtLT4KICA8cGF0aCBkPSJNNDAgMyBMNzQgMTQgTDc0IDQ4IFE3NCA3MiA0MCA4NyBRNiA3MiA2IDQ4IEw2IDE0IFoiCiAgICAgICAgZmlsbD0idXJsKCNib3JkZXJHcmFkKSIgLz4KCiAgPCEtLSBTaGllbGQgYm9keSAtLT4KICA8cGF0aCBkPSJNNDAgNyBMNzAgMTcgTDcwIDQ4IFE3MCA2OSA0MCA4MyBRMTAgNjkgMTAgNDggTDEwIDE3IFoiCiAgICAgICAgZmlsbD0idXJsKCNzaGllbGRHcmFkKSIgLz4KCiAgPCEtLSBJbm5lciBnbG93IC0tPgogIDxwYXRoIGQ9Ik00MCA3IEw3MCAxNyBMNzAgNDggUTcwIDY5IDQwIDgzIFExMCA2OSAxMCA0OCBMMTAgMTcgWiIKICAgICAgICBmaWxsPSJ1cmwoI2dsb3dHcmFkKSIgLz4KCiAgPCEtLSBIb3Jpem9udGFsIGRpdmlkZXIgbGluZSAtLT4KICA8bGluZSB4MT0iMTMiIHkxPSIzNiIgeDI9IjY3IiB5Mj0iMzYiIHN0cm9rZT0iI2ZiYmYyNCIgc3Ryb2tlLXdpZHRoPSIwLjgiIHN0cm9rZS1vcGFjaXR5PSIwLjQiLz4KCiAgPCEtLSBNUyB0ZXh0IC0tPgogIDx0ZXh0IHg9IjQwIiB5PSIzMiIKICAgICAgICBmb250LWZhbWlseT0iJ1NwYWNlIE1vbm8nLCBtb25vc3BhY2UiCiAgICAgICAgZm9udC1zaXplPSIxNiIKICAgICAgICBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNmYmJmMjQiCiAgICAgICAgdGV4dC1hbmNob3I9Im1pZGRsZSIKICAgICAgICBmaWx0ZXI9InVybCgjZ2xvdykiCiAgICAgICAgbGV0dGVyLXNwYWNpbmc9IjIiPk1TPC90ZXh0PgoKICA8IS0tIFN1YnRpdGxlIC0tPgogIDx0ZXh0IHg9IjQwIiB5PSI1NiIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNi41IgogICAgICAgIGZvbnQtd2VpZ2h0PSI3MDAiCiAgICAgICAgZmlsbD0iIzk0YTNiOCIKICAgICAgICB0ZXh0LWFuY2hvcj0ibWlkZGxlIgogICAgICAgIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgoKICA8dGV4dCB4PSI0MCIgeT0iNjUiCiAgICAgICAgZm9udC1mYW1pbHk9IidTeW5lJywgc2Fucy1zZXJpZiIKICAgICAgICBmb250LXNpemU9IjYuNSIKICAgICAgICBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiCiAgICAgICAgdGV4dC1hbmNob3I9Im1pZGRsZSIKICAgICAgICBsZXR0ZXItc3BhY2luZz0iMS41Ij5TT1VSQ0U8L3RleHQ+CgogIDwhLS0gQ29ybmVyIGRvdHMgZGVjb3JhdGlvbiAtLT4KICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjQ0IiByPSIxLjUiIGZpbGw9IiNmYmJmMjQiIG9wYWNpdHk9IjAuNSIvPgogIDxjaXJjbGUgY3g9IjU2IiBjeT0iNDQiIHI9IjEuNSIgZmlsbD0iI2ZiYmYyNCIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPgo=';
+const BADGE_SENDER_GOLD     = 'image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0ZGRTQ0RCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNCODg2MEIiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNGRkQ3MDA7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojRkZENzAwO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMTQgNDgsMjQgNDQsMjQgNDQsMzIgMzYsMzIgMzYsMjQgMzIsMjQiIGZpbGw9IiNGRkQ3MDAiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNGRkQ3MDAiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzE8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5TRU5ERVI8L3RleHQ+CgogIDwhLS0gQ29ybmVyIGRvdHMgLS0+CiAgPGNpcmNsZSBjeD0iMjQiIGN5PSI1OCIgcj0iMS41IiBmaWxsPSIjRkZENzAwIiBvcGFjaXR5PSIwLjUiLz4KICA8Y2lyY2xlIGN4PSI1NiIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNGRkQ3MDAiIG9wYWNpdHk9IjAuNSIvPgo8L3N2Zz4=';
+const BADGE_SENDER_SILVER   = 'image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0U4RThFOCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM4MDgwODAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNDMEMwQzA7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojQzBDMEMwO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMTQgNDgsMjQgNDQsMjQgNDQsMzIgMzYsMzIgMzYsMjQgMzIsMjQiIGZpbGw9IiNDMEMwQzAiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNDMEMwQzAiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNDMEMwQzAiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzI8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5TRU5ERVI8L3RleHQ+CgogIDwhLS0gQ29ybmVyIGRvdHMgLS0+CiAgPGNpcmNsZSBjeD0iMjQiIGN5PSI1OCIgcj0iMS41IiBmaWxsPSIjQzBDMEMwIiBvcGFjaXR5PSIwLjUiLz4KICA8Y2lyY2xlIGN4PSI1NiIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNDMEMwQzAiIG9wYWNpdHk9IjAuNSIvPgo8L3N2Zz4=';
+const BADGE_SENDER_BRONZE   = 'image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0U4QTg1QSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM4QjQ1MTMiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNDRDdGMzI7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojQ0Q3RjMyO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMTQgNDgsMjQgNDQsMjQgNDQsMzIgMzYsMzIgMzYsMjQgMzIsMjQiIGZpbGw9IiNDRDdGMzIiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNDRDdGMzIiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNDRDdGMzIiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzM8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5TRU5ERVI8L3RleHQ+CgogIDwhLS0gQ29ybmVyIGRvdHMgLS0+CiAgPGNpcmNsZSBjeD0iMjQiIGN5PSI1OCIgcj0iMS41IiBmaWxsPSIjQ0Q3RjMyIiBvcGFjaXR5PSIwLjUiLz4KICA8Y2lyY2xlIGN4PSI1NiIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNDRDdGMzIiIG9wYWNpdHk9IjAuNSIvPgo8L3N2Zz4=';
+const BADGE_RECEIVER_GOLD   = 'image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0ZGRTQ0RCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNCODg2MEIiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNGRkQ3MDA7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojRkZENzAwO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMzIgNDgsMjIgNDQsMjIgNDQsMTQgMzYsMTQgMzYsMjIgMzIsMjIiIGZpbGw9IiNGRkQ3MDAiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNGRkQ3MDAiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzE8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5SRUNFSVZFUjwvdGV4dD4KCiAgPCEtLSBDb3JuZXIgZG90cyAtLT4KICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNGRkQ3MDAiIG9wYWNpdHk9IjAuNSIvPgogIDxjaXJjbGUgY3g9IjU2IiBjeT0iNTgiIHI9IjEuNSIgZmlsbD0iI0ZGRDcwMCIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPg==';
+const BADGE_RECEIVER_SILVER = 'image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0U4RThFOCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM4MDgwODAiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNDMEMwQzA7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojQzBDMEMwO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMzIgNDgsMjIgNDQsMjIgNDQsMTQgMzYsMTQgMzYsMjIgMzIsMjIiIGZpbGw9IiNDMEMwQzAiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNDMEMwQzAiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNDMEMwQzAiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzI8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5SRUNFSVZFUjwvdGV4dD4KCiAgPCEtLSBDb3JuZXIgZG90cyAtLT4KICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNDMEMwQzAiIG9wYWNpdHk9IjAuNSIvPgogIDxjaXJjbGUgY3g9IjU2IiBjeT0iNTgiIHI9IjEuNSIgZmlsbD0iI0MwQzBDMCIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPg==';
+const BADGE_RECEIVER_BRONZE = 'image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCAxMDAiIHdpZHRoPSI4MCIgaGVpZ2h0PSIxMDAiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib2R5R3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I0U4QTg1QSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM4QjQ1MTMiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNDRDdGMzI7c3RvcC1vcGFjaXR5OjAuMTgiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojQ0Q3RjMyO3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIuNSIgcmVzdWx0PSJibHVyIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYmx1ciIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KCiAgPCEtLSBIZXhhZ29uIHBvaW50ZWQgdG9wL2JvdHRvbSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjQwLDMgNzYsMjIgNzYsNzggNDAsOTcgNCw3OCA0LDIyIgogICAgICAgICAgIGZpbGw9InVybCgjYm9yZGVyR3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNib2R5R3JhZCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjQwLDkgNzAsMjYgNzAsNzQgNDAsOTEgMTAsNzQgMTAsMjYiCiAgICAgICAgICAgZmlsbD0idXJsKCNnbG93R3JhZCkiLz4KCiAgPCEtLSBBcnJvdyBpY29uIHRvcCBhcmVhIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDAsMzIgNDgsMjIgNDQsMjIgNDQsMTQgMzYsMTQgMzYsMjIgMzIsMjIiIGZpbGw9IiNDRDdGMzIiIG9wYWNpdHk9IjAuNiIvPgoKICA8IS0tIERpdmlkZXIgLS0+CiAgPGxpbmUgeDE9IjEyIiB5MT0iNTIiIHgyPSI2OCIgeTI9IjUyIiBzdHJva2U9IiNDRDdGMzIiIHN0cm9rZS13aWR0aD0iMC44IiBzdHJva2Utb3BhY2l0eT0iMC4zNSIvPgoKICA8IS0tIE1haW4gbGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjQ3IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3BhY2UgTW9ubycsIG1vbm9zcGFjZSIKICAgICAgICBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNDRDdGMzIiIHRleHQtYW5jaG9yPSJtaWRkbGUiCiAgICAgICAgZmlsdGVyPSJ1cmwoI2dsb3cpIiBsZXR0ZXItc3BhY2luZz0iMSI+IzM8L3RleHQ+CgogIDwhLS0gU3VibGFiZWwgLS0+CiAgPHRleHQgeD0iNDAiIHk9IjY0IgogICAgICAgIGZvbnQtZmFtaWx5PSInU3luZScsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSI3IiBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgogIDx0ZXh0IHg9IjQwIiB5PSI3NCIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNyIgZm9udC13ZWlnaHQ9IjcwMCIKICAgICAgICBmaWxsPSIjOTRhM2I4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBsZXR0ZXItc3BhY2luZz0iMS41Ij5SRUNFSVZFUjwvdGV4dD4KCiAgPCEtLSBDb3JuZXIgZG90cyAtLT4KICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjU4IiByPSIxLjUiIGZpbGw9IiNDRDdGMzIiIG9wYWNpdHk9IjAuNSIvPgogIDxjaXJjbGUgY3g9IjU2IiBjeT0iNTgiIHI9IjEuNSIgZmlsbD0iI0NEN0YzMiIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPg==';
+const BADGE_MS              = 'image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA4MCA5MCIgd2lkdGg9IjgwIiBoZWlnaHQ9IjkwIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ic2hpZWxkR3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZTI5M2IiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMGYxNzJhIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJib3JkZXJHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6I2ZiYmYyNCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNkOTc3MDYiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9Imdsb3dHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmYmJmMjQ7c3RvcC1vcGFjaXR5OjAuMTUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZmJiZjI0O3N0b3Atb3BhY2l0eTowIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjIiIHJlc3VsdD0iYmx1ciIvPgogICAgICA8ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49ImJsdXIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+CiAgICA8L2ZpbHRlcj4KICA8L2RlZnM+CgogIDwhLS0gU2hpZWxkIGJvcmRlciAoc2xpZ2h0bHkgbGFyZ2VyLCBnb2xkKSAtLT4KICA8cGF0aCBkPSJNNDAgMyBMNzQgMTQgTDc0IDQ4IFE3NCA3MiA0MCA4NyBRNiA3MiA2IDQ4IEw2IDE0IFoiCiAgICAgICAgZmlsbD0idXJsKCNib3JkZXJHcmFkKSIgLz4KCiAgPCEtLSBTaGllbGQgYm9keSAtLT4KICA8cGF0aCBkPSJNNDAgNyBMNzAgMTcgTDcwIDQ4IFE3MCA2OSA0MCA4MyBRMTAgNjkgMTAgNDggTDEwIDE3IFoiCiAgICAgICAgZmlsbD0idXJsKCNzaGllbGRHcmFkKSIgLz4KCiAgPCEtLSBJbm5lciBnbG93IC0tPgogIDxwYXRoIGQ9Ik00MCA3IEw3MCAxNyBMNzAgNDggUTcwIDY5IDQwIDgzIFExMCA2OSAxMCA0OCBMMTAgMTcgWiIKICAgICAgICBmaWxsPSJ1cmwoI2dsb3dHcmFkKSIgLz4KCiAgPCEtLSBIb3Jpem9udGFsIGRpdmlkZXIgbGluZSAtLT4KICA8bGluZSB4MT0iMTMiIHkxPSIzNiIgeDI9IjY3IiB5Mj0iMzYiIHN0cm9rZT0iI2ZiYmYyNCIgc3Ryb2tlLXdpZHRoPSIwLjgiIHN0cm9rZS1vcGFjaXR5PSIwLjQiLz4KCiAgPCEtLSBNUyB0ZXh0IC0tPgogIDx0ZXh0IHg9IjQwIiB5PSIzMiIKICAgICAgICBmb250LWZhbWlseT0iJ1NwYWNlIE1vbm8nLCBtb25vc3BhY2UiCiAgICAgICAgZm9udC1zaXplPSIxNiIKICAgICAgICBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiNmYmJmMjQiCiAgICAgICAgdGV4dC1hbmNob3I9Im1pZGRsZSIKICAgICAgICBmaWx0ZXI9InVybCgjZ2xvdykiCiAgICAgICAgbGV0dGVyLXNwYWNpbmc9IjIiPk1TPC90ZXh0PgoKICA8IS0tIFN1YnRpdGxlIC0tPgogIDx0ZXh0IHg9IjQwIiB5PSI1NiIKICAgICAgICBmb250LWZhbWlseT0iJ1N5bmUnLCBzYW5zLXNlcmlmIgogICAgICAgIGZvbnQtc2l6ZT0iNi41IgogICAgICAgIGZvbnQtd2VpZ2h0PSI3MDAiCiAgICAgICAgZmlsbD0iIzk0YTNiOCIKICAgICAgICB0ZXh0LWFuY2hvcj0ibWlkZGxlIgogICAgICAgIGxldHRlci1zcGFjaW5nPSIxLjUiPk1FUklUPC90ZXh0PgoKICA8dGV4dCB4PSI0MCIgeT0iNjUiCiAgICAgICAgZm9udC1mYW1pbHk9IidTeW5lJywgc2Fucy1zZXJpZiIKICAgICAgICBmb250LXNpemU9IjYuNSIKICAgICAgICBmb250LXdlaWdodD0iNzAwIgogICAgICAgIGZpbGw9IiM5NGEzYjgiCiAgICAgICAgdGV4dC1hbmNob3I9Im1pZGRsZSIKICAgICAgICBsZXR0ZXItc3BhY2luZz0iMS41Ij5TT1VSQ0U8L3RleHQ+CgogIDwhLS0gQ29ybmVyIGRvdHMgZGVjb3JhdGlvbiAtLT4KICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjQ0IiByPSIxLjUiIGZpbGw9IiNmYmJmMjQiIG9wYWNpdHk9IjAuNSIvPgogIDxjaXJjbGUgY3g9IjU2IiBjeT0iNDQiIHI9IjEuNSIgZmlsbD0iI2ZiYmYyNCIgb3BhY2l0eT0iMC41Ii8+Cjwvc3ZnPgo=';
 const BADGE_SENDER_DYN   = (rank) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 100" width="120" height="150">
   <defs>
     <linearGradient id="bG" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -4918,7 +4923,7 @@ function getMeritSenderBadge(rank) {
   if (rank === 3) return `<img src="${BADGE_SENDER_BRONZE}" style="width:120px;height:150px;vertical-align:middle" title="Merit Sender #3" class="badge-img badge-bronze">`;
   const svgStr = BADGE_SENDER_DYN(rank);
   const b64 = btoa(unescape(encodeURIComponent(svgStr)));
-  return `<img src="data:image/svg+xml;base64,${b64}" style="width:120px;height:150px;vertical-align:middle" title="Merit Sender #${rank}" class="badge-img badge-orange">`;
+  return `<img src="image/svg+xml;base64,${b64}" style="width:120px;height:150px;vertical-align:middle" title="Merit Sender #${rank}" class="badge-img badge-orange">`;
 }
 
 function getMeritReceiverBadge(rank) {
@@ -4928,7 +4933,7 @@ function getMeritReceiverBadge(rank) {
   if (rank === 3) return `<img src="${BADGE_RECEIVER_BRONZE}" style="width:120px;height:150px;vertical-align:middle" title="Merit Receiver #3" class="badge-img badge-bronze">`;
   const svgStr = BADGE_RECEIVER_DYN(rank);
   const b64 = btoa(unescape(encodeURIComponent(svgStr)));
-  return `<img src="data:image/svg+xml;base64,${b64}" style="width:120px;height:150px;vertical-align:middle" title="Merit Receiver #${rank}" class="badge-img badge-green">`;
+  return `<img src="image/svg+xml;base64,${b64}" style="width:120px;height:150px;vertical-align:middle" title="Merit Receiver #${rank}" class="badge-img badge-green">`;
 }
 
 function getMsBadge() {
@@ -4969,7 +4974,7 @@ function renderBadgesSection(d, ranks, awardData = null) {
 </svg>`;
     const b64 = btoa(unescape(encodeURIComponent(svg)));
     awardBadge = `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:6px">
-      <img src="data:image/svg+xml;base64,${b64}" style="width:120px;height:150px;vertical-align:middle" title="Community Award ${awardData.year}: ${awardData.title}" class="badge-img badge-amber">
+      <img src="image/svg+xml;base64,${b64}" style="width:120px;height:150px;vertical-align:middle" title="Community Award ${awardData.year}: ${awardData.title}" class="badge-img badge-amber">
       <span style="font-size:12px;font-weight:700;color:#fbbf24;letter-spacing:0.5px;text-align:center;max-width:140px;line-height:1.3">${awardData.title}</span>
     </div>`;
   }
@@ -4985,7 +4990,7 @@ function renderBadgesSection(d, ranks, awardData = null) {
     + wrap(receiverBadge)
     + '</div></div>';
 }
-   
+
 
 // ═══════════════════════════════════════════════════════════════
 // generateProfileHTML — renders a full BRDb profile page
@@ -5241,11 +5246,11 @@ body{background:transparent;color:var(--txt);font-family:'Syne',sans-serif;min-h
         return `<span class="b" style="color:#94a3b8;background:#94a3b818;border-color:#94a3b8">${icons[b]||'📌'} ${b}</span>`;
       }).join('')}
     </div>
-    
+
   </div>
       <a class="btl" href="https://bitcointalk.org/index.php?action=profile;u=${uid}" target="_blank">⛓ Bitcointalk</a>
 </div>
-${ranks.total ? `<div style="background:var(--s);border:1px solid var(--b);border-radius:18px;padding:14px 20px;margin-bottom:20px" class="a2"><div style="font-size:10px;font-weight:700;color:#475569;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">Ranks</div><div style="height:1px;background:var(--b);margin-bottom:14px"></div><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center"><span style="display:inline-flex;align-items:center;gap:8px"><span style="display:inline-flex;flex-direction:column;align-items:center;gap:4px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ic3RlZWxfb3V0ZXIiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojOWNhM2FmIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iNDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZTVlN2ViIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzZiNzI4MCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ic3RlZWxfaW5uZXIiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMWUyOTNiIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzBmMTcyYSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ic3RlZWxfdGV4dCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmMWY1ZjkiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI1MCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZmZmZmYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojY2JkNWUxIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvd19zdGVlbCI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjMiIHJlc3VsdD0iYiIvPgogICAgICA8ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49ImIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+CiAgICA8L2ZpbHRlcj4KICA8L2RlZnM+CiAgPHBvbHlnb24gcG9pbnRzPSI2MCw0IDEwOCwzMCAxMDgsOTAgNjAsMTE2IDEyLDkwIDEyLDMwIiBmaWxsPSJ1cmwoI3N0ZWVsX291dGVyKSIvPgogIDxwb2x5Z29uIHBvaW50cz0iNjAsMTIgMTAwLDM0IDEwMCw4NiA2MCwxMDggMjAsODYgMjAsMzQiIGZpbGw9InVybCgjc3RlZWxfaW5uZXIpIi8+CiAgPHBvbHlnb24gcG9pbnRzPSI2MCwxNCAxMDAsMzYgODAsMzYgNDYsMjIiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNykiLz4KICA8dGV4dCB4PSI2MCIgeT0iNzIiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLHNlcmlmIiBmb250LXNpemU9IjM4IiBmb250LXdlaWdodD0iOTAwIgogICAgICAgIGZpbGw9InVybCgjc3RlZWxfdGV4dCkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbHRlcj0idXJsKCNnbG93X3N0ZWVsKSIKICAgICAgICBsZXR0ZXItc3BhY2luZz0iLTEiPkJSPC90ZXh0Pgo8L3N2Zz4=" style="width:80px;height:80px"><span style="font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:1px">BRDb</span></span><span style="font-size:18px;font-weight:900;color:#e5e7eb">#${ranks.BRDb.toLocaleString()}</span></span><span style="color:#334155;font-size:14px">·</span><span style="display:inline-flex;align-items:center;gap:8px"><span style="display:inline-flex;flex-direction:column;align-items:center;gap:4px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ29sZF9vdXRlciIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmY2QzNGQiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIzMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZWYwOGEiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI2MCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmNTllMGIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojYjQ1MzA5Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJnb2xkX2lubmVyIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzFjMWEwYSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMwZjBkMDUiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImdvbGRfdGV4dCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZWY5YzMiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI1MCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZGUwNDciLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZjU5ZTBiIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvd19nb2xkIj4KICAgICAgPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMyIgcmVzdWx0PSJiIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYiIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KICA8cGF0aCBkPSJNNjAsNCBMMTA4LDIwIEwxMDgsNzIgUTEwOCwxMDQgNjAsMTE2IFExMiwxMDQgMTIsNzIgTDEyLDIwIFoiIGZpbGw9InVybCgjZ29sZF9vdXRlcikiLz4KICA8cGF0aCBkPSJNNjAsMTMgTDEwMCwyNyBMMTAwLDcxIFExMDAsOTggNjAsMTA4IFEyMCw5OCAyMCw3MSBMMjAsMjcgWiIgZmlsbD0idXJsKCNnb2xkX2lubmVyKSIvPgogIDxwYXRoIGQ9Ik02MCwxNSBMMTAwLDI5IEw4MCwyOSBMNTAsMTggWiIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjEyKSIvPgogIDx0ZXh0IHg9IjYwIiB5PSI3NCIgZm9udC1mYW1pbHk9Ikdlb3JnaWEsc2VyaWYiIGZvbnQtc2l6ZT0iMzgiIGZvbnQtd2VpZ2h0PSI5MDAiCiAgICAgICAgZmlsbD0idXJsKCNnb2xkX3RleHQpIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWx0ZXI9InVybCgjZ2xvd19nb2xkKSIKICAgICAgICBsZXR0ZXItc3BhY2luZz0iLTEiPlJFPC90ZXh0Pgo8L3N2Zz4=" style="width:80px;height:80px"><span style="font-size:11px;font-weight:700;color:#fbbf24;letter-spacing:1px">Reputation</span></span><span style="font-size:18px;font-weight:900;color:#fbbf24">#${ranks.Reputation.toLocaleString()}</span></span><span style="color:#334155;font-size:14px">·</span><span style="display:inline-flex;align-items:center;gap:8px"><span style="display:inline-flex;flex-direction:column;align-items:center;gap:4px"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZGlhX291dGVyIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzkzYzVmZCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjMwJSIgc3R5bGU9InN0b3AtY29sb3I6I2JmZGJmZSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjcwJSIgc3R5bGU9InN0b3AtY29sb3I6IzNiODJmNiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZDRlZDgiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImRpYV9pbm5lciIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMwNjBlMWYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMDMwNzEyIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJkaWFfdGV4dCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNlMGYyZmUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI1MCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM3ZGQzZmMiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMzhiZGY4Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvd19kaWEiPgogICAgICA8ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSIzIiByZXN1bHQ9ImIiLz4KICAgICAgPGZlTWVyZ2U+PGZlTWVyZ2VOb2RlIGluPSJiIi8+PGZlTWVyZ2VOb2RlIGluPSJTb3VyY2VHcmFwaGljIi8+PC9mZU1lcmdlPgogICAgPC9maWx0ZXI+CiAgPC9kZWZzPgogIDxwb2x5Z29uIHBvaW50cz0iNjAsNCAxMTYsNjAgNjAsMTE2IDQsNjAiIGZpbGw9InVybCgjZGlhX291dGVyKSIvPgogIDxwb2x5Z29uIHBvaW50cz0iNjAsMTQgMTA2LDYwIDYwLDEwNiAxNCw2MCIgZmlsbD0idXJsKCNkaWFfaW5uZXIpIi8+CiAgPHBvbHlnb24gcG9pbnRzPSI2MCwxNiAxMDYsNjIgODIsMzgiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wOCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjYwLDE2IDM4LDM4IDE0LDYyIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDQpIi8+CiAgPHRleHQgeD0iNjAiIHk9IjcyIiBmb250LWZhbWlseT0iR2VvcmdpYSxzZXJpZiIgZm9udC1zaXplPSIzOCIgZm9udC13ZWlnaHQ9IjkwMCIKICAgICAgICBmaWxsPSJ1cmwoI2RpYV90ZXh0KSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsdGVyPSJ1cmwoI2dsb3dfZGlhKSIKICAgICAgICBsZXR0ZXItc3BhY2luZz0iLTEiPklNPC90ZXh0Pgo8L3N2Zz4=" style="width:80px;height:80px"><span style="font-size:11px;font-weight:700;color:#60a5fa;letter-spacing:1px">Impact</span></span><span style="font-size:18px;font-weight:900;color:#60a5fa">#${ranks.impact.toLocaleString()}</span></span></div></div>` : ""}
+${ranks.total ? `<div style="background:var(--s);border:1px solid var(--b);border-radius:18px;padding:14px 20px;margin-bottom:20px" class="a2"><div style="font-size:10px;font-weight:700;color:#475569;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px">Ranks</div><div style="height:1px;background:var(--b);margin-bottom:14px"></div><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center"><span style="display:inline-flex;align-items:center;gap:8px"><span style="display:inline-flex;flex-direction:column;align-items:center;gap:4px"><img src="image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ic3RlZWxfb3V0ZXIiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojOWNhM2FmIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iNDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZTVlN2ViIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzZiNzI4MCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ic3RlZWxfaW5uZXIiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMWUyOTNiIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3R5bGU9InN0b3AtY29sb3I6IzBmMTcyYSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0ic3RlZWxfdGV4dCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmMWY1ZjkiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI1MCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZmZmZmYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojY2JkNWUxIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvd19zdGVlbCI+CiAgICAgIDxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjMiIHJlc3VsdD0iYiIvPgogICAgICA8ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49ImIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+CiAgICA8L2ZpbHRlcj4KICA8L2RlZnM+CiAgPHBvbHlnb24gcG9pbnRzPSI2MCw0IDEwOCwzMCAxMDgsOTAgNjAsMTE2IDEyLDkwIDEyLDMwIiBmaWxsPSJ1cmwoI3N0ZWVsX291dGVyKSIvPgogIDxwb2x5Z29uIHBvaW50cz0iNjAsMTIgMTAwLDM0IDEwMCw4NiA2MCwxMDggMjAsODYgMjAsMzQiIGZpbGw9InVybCgjc3RlZWxfaW5uZXIpIi8+CiAgPHBvbHlnb24gcG9pbnRzPSI2MCwxNCAxMDAsMzYgODAsMzYgNDYsMjIiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNykiLz4KICA8dGV4dCB4PSI2MCIgeT0iNzIiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLHNlcmlmIiBmb250LXNpemU9IjM4IiBmb250LXdlaWdodD0iOTAwIgogICAgICAgIGZpbGw9InVybCgjc3RlZWxfdGV4dCkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbHRlcj0idXJsKCNnbG93X3N0ZWVsKSIKICAgICAgICBsZXR0ZXItc3BhY2luZz0iLTEiPkJSPC90ZXh0Pgo8L3N2Zz4=" style="width:80px;height:80px"><span style="font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:1px">BRDb</span></span><span style="font-size:18px;font-weight:900;color:#e5e7eb">#${ranks.BRDb.toLocaleString()}</span></span><span style="color:#334155;font-size:14px">·</span><span style="display:inline-flex;align-items:center;gap:8px"><span style="display:inline-flex;flex-direction:column;align-items:center;gap:4px"><img src="image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ29sZF9vdXRlciIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmY2QzNGQiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIzMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZWYwOGEiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI2MCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmNTllMGIiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojYjQ1MzA5Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJnb2xkX2lubmVyIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzFjMWEwYSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMwZjBkMDUiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImdvbGRfdGV4dCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZWY5YzMiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI1MCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZGUwNDciLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZjU5ZTBiIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvd19nb2xkIj4KICAgICAgPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMyIgcmVzdWx0PSJiIi8+CiAgICAgIDxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iYiIvPjxmZU1lcmdlTm9kZSBpbj0iU291cmNlR3JhcGhpYyIvPjwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogIDwvZGVmcz4KICA8cGF0aCBkPSJNNjAsNCBMMTA4LDIwIEwxMDgsNzIgUTEwOCwxMDQgNjAsMTE2IFExMiwxMDQgMTIsNzIgTDEyLDIwIFoiIGZpbGw9InVybCgjZ29sZF9vdXRlcikiLz4KICA8cGF0aCBkPSJNNjAsMTMgTDEwMCwyNyBMMTAwLDcxIFExMDAsOTggNjAsMTA4IFEyMCw5OCAyMCw3MSBMMjAsMjcgWiIgZmlsbD0idXJsKCNnb2xkX2lubmVyKSIvPgogIDxwYXRoIGQ9Ik02MCwxNSBMMTAwLDI5IEw4MCwyOSBMNTAsMTggWiIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjEyKSIvPgogIDx0ZXh0IHg9IjYwIiB5PSI3NCIgZm9udC1mYW1pbHk9Ikdlb3JnaWEsc2VyaWYiIGZvbnQtc2l6ZT0iMzgiIGZvbnQtd2VpZ2h0PSI5MDAiCiAgICAgICAgZmlsbD0idXJsKCNnb2xkX3RleHQpIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWx0ZXI9InVybCgjZ2xvd19nb2xkKSIKICAgICAgICBsZXR0ZXItc3BhY2luZz0iLTEiPlJFPC90ZXh0Pgo8L3N2Zz4=" style="width:80px;height:80px"><span style="font-size:11px;font-weight:700;color:#fbbf24;letter-spacing:1px">Reputation</span></span><span style="font-size:18px;font-weight:900;color:#fbbf24">#${ranks.Reputation.toLocaleString()}</span></span><span style="color:#334155;font-size:14px">·</span><span style="display:inline-flex;align-items:center;gap:8px"><span style="display:inline-flex;flex-direction:column;align-items:center;gap:4px"><img src="image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZGlhX291dGVyIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzkzYzVmZCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjMwJSIgc3R5bGU9InN0b3AtY29sb3I6I2JmZGJmZSIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjcwJSIgc3R5bGU9InN0b3AtY29sb3I6IzNiODJmNiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMxZDRlZDgiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImRpYV9pbm5lciIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiMwNjBlMWYiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMDMwNzEyIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJkaWFfdGV4dCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNlMGYyZmUiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSI1MCUiIHN0eWxlPSJzdG9wLWNvbG9yOiM3ZGQzZmMiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMzhiZGY4Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvd19kaWEiPgogICAgICA8ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSIzIiByZXN1bHQ9ImIiLz4KICAgICAgPGZlTWVyZ2U+PGZlTWVyZ2VOb2RlIGluPSJiIi8+PGZlTWVyZ2VOb2RlIGluPSJTb3VyY2VHcmFwaGljIi8+PC9mZU1lcmdlPgogICAgPC9maWx0ZXI+CiAgPC9kZWZzPgogIDxwb2x5Z29uIHBvaW50cz0iNjAsNCAxMTYsNjAgNjAsMTE2IDQsNjAiIGZpbGw9InVybCgjZGlhX291dGVyKSIvPgogIDxwb2x5Z29uIHBvaW50cz0iNjAsMTQgMTA2LDYwIDYwLDEwNiAxNCw2MCIgZmlsbD0idXJsKCNkaWFfaW5uZXIpIi8+CiAgPHBvbHlnb24gcG9pbnRzPSI2MCwxNiAxMDYsNjIgODIsMzgiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wOCkiLz4KICA8cG9seWdvbiBwb2ludHM9IjYwLDE2IDM4LDM4IDE0LDYyIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDQpIi8+CiAgPHRleHQgeD0iNjAiIHk9IjcyIiBmb250LWZhbWlseT0iR2VvcmdpYSxzZXJpZiIgZm9udC1zaXplPSIzOCIgZm9udC13ZWlnaHQ9IjkwMCIKICAgICAgICBmaWxsPSJ1cmwoI2RpYV90ZXh0KSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsdGVyPSJ1cmwoI2dsb3dfZGlhKSIKICAgICAgICBsZXR0ZXItc3BhY2luZz0iLTEiPklNPC90ZXh0Pgo8L3N2Zz4=" style="width:80px;height:80px"><span style="font-size:11px;font-weight:700;color:#60a5fa;letter-spacing:1px">Impact</span></span><span style="font-size:18px;font-weight:900;color:#60a5fa">#${ranks.impact.toLocaleString()}</span></span></div></div>` : ""}
 ${renderBadgesSection(d, ranks, awardData)}
 
 <div class="hero a2">
@@ -6112,3 +6117,6 @@ if (lbSearch) {
 </html>`;
 
 }
+
+
+
