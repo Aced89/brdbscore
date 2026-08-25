@@ -1433,7 +1433,7 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
           ...brdbRow,
           username: bitcointalkData?.name || userProfile?.username || brdbRow?.username || null,
           posts_total: bitcointalkData?.posts ?? userProfile?.posts_total ?? brdbRow?.posts_total ?? 0,
-          merit_total: bitcointalkData?.merit ?? userProfile?.merit_total ?? brdbRow?.merit_total ?? 0,
+          merit_total: bitcointalkData?.meritTotal ?? userProfile?.merit_total ?? brdbRow?.merit_total ?? 0,
           posts120: userProfile?.posts_120d ?? brdbRow?.posts120 ?? 0,
           merit120: userProfile?.merit_received_120d ?? brdbRow?.merit120 ?? 0,
           merits_sent120: userProfile?.merit_sent_120d ?? brdbRow?.merits_sent120 ?? 0,
