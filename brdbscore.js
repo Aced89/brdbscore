@@ -1428,6 +1428,9 @@ if (request.method === 'POST' && path === '/recalc-brdb') {
      </body></html>`, { status: 404, headers: { ...cors, 'Content-Type': 'text/html' } });
         }
 
+        // Estrai i dati scrapati da bitcointalk_scraped se disponibili
+        const bitcointalkData = userProfile?.bitcointalk_scraped ? JSON.parse(userProfile.bitcointalk_scraped) : null;
+
         // Merge: partiamo da brdbRow (tutti i calcoli), sovrascrivi con dati freschi da bitcointalk_scraped se disponibili, altrimenti user_profiles
         const mergedRow = {
           ...brdbRow,
