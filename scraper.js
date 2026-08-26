@@ -115,13 +115,19 @@ export default {
       let btData = { error: 'Failed to scrape' };
       if (profileRes.ok) {
         const pHtml = await profileRes.text();
-        const postsMatch = pHtml.match(/<td><b>Posts:\s*<\\/b><\\/td>\s*<td>(\d+)<\\/td>/i);
-        const nameMatch = pHtml.match(/<td><b>Name:\s*<\\/b><\\/td>\s*<td>([^<]+)<\\/td>/i);
-        btData = {
-          name: nameMatch ? nameMatch[1].trim() : null,
-          posts: postsMatch ? parseInt(postsMatch[1]) : null,
-        };
-      }
+-        const postsMatch = pHtml.match(/<td><b>Posts:\s*<\\/b><\\/td>\s*<td>(\d+)<\\/td>/i);
+-        const nameMatch = pHtml.match(/<td><b>Name:\s*<\\/b><\\/td>\s*<td>([^<]+)<\\/td>/i);
+-        btData = {
+-          name: nameMatch ? nameMatch[1].trim() : null,
+-          posts: postsMatch ? parseInt(postsMatch[1]) : null,
+-        };
++        const nameMatch = pHtml.match(/<td>\s*<b>\s*Name:\s*<\\/b>\s*<\\/td>\s*<td>([^<]+)<\\/td>/i);
++        const postsMatch = pHtml.match(/<td>\s*<b>\s*Posts:\s*<\\/b>\s*<\\/td>\s*<td>\s*(\d+)\s*<\\/td>/i);
++        btData = {
++          name: nameMatch ? nameMatch[1].trim() : null,
++          posts: postsMatch ? parseInt(postsMatch[1], 10) : null,
++        };
+       }
       
       // Dati dal database user_profiles
       const dbProfile = await env.DB.prepare('SELECT * FROM user_profiles WHERE uid = ?').bind(uid).first();
@@ -152,159 +158,5 @@ export default {
         }
       });
     }
-    if (url.pathname === '/stats') {
-      const total = await env.DB.prepare('SELECT COUNT(*) as n FROM users_queue').first();
-      const scraped = await env.DB.prepare('SELECT COUNT(*) as n FROM users_queue WHERE scraped = 1').first();
-      const profiles = await env.DB.prepare('SELECT COUNT(*) as n FROM user_profiles').first();
-      const merits = await env.DB.prepare('SELECT COUNT(*) as n FROM merit_events').first();
-      const aggregates = await env.DB.prepare('SELECT COUNT(*) as n FROM daily_aggregates').first();
-      return Response.json({ 
-        total: total?.n, scraped: scraped?.n, remaining: (total?.n||0)-(scraped?.n||0), 
-        profiles: profiles?.n, merits: merits?.n, aggregates: aggregates?.n 
-      });
-    }
-    
-    if (url.pathname === '/profile' && url.searchParams.get('uid')) {
-      const uid = url.searchParams.get('uid');
-      const refresh = url.searchParams.get('refresh') === '1' || url.searchParams.get('refresh') === 'true';
-      if (refresh) {
-        const BTT_COOKIE = env.BTT_COOKIE;
-        if (!BTT_COOKIE) return Response.json({ error: 'No cookie' }, { status: 500 });
-        try {
-          // Force a synchronous scrape and DB update before returning
-          await scrapeProfile(uid, BTT_COOKIE, env.DB);
-        } catch (err) {
-          console.error('Forced scrape failed for uid', uid, err?.message || err);
-          // proceed to return whatever is available in DB
-        }
-      }
-      const profile = await env.DB.prepare('SELECT * FROM user_profiles WHERE uid = ?').bind(uid).first();
-      if (!profile) return Response.json({ error: 'not found' }, { status: 404 });
-      const sent = await env.DB.prepare('SELECT SUM(amount) as total FROM merit_events WHERE from_uid = ?').bind(uid).first();
-      const received = await env.DB.prepare('SELECT SUM(amount) as total FROM merit_events WHERE to_uid = ?').bind(uid).first();
-      return Response.json({ ...profile, merits_sent_live: sent?.total||0, merits_received_live: received?.total||0 });
-    }
-    
-    return new Response('Scraper OK', { status: 200 });
   }
 };
-
-async function scrapeNext(env) {
-  const BTT_COOKIE = env.BTT_COOKIE;
-  if (!BTT_COOKIE) return Response.json({ error: 'No cookie' });
-  
-  const user = await env.DB.prepare('SELECT uid FROM users_queue WHERE scraped = 0 ORDER BY id ASC LIMIT 1').first();
-  if (!user) return Response.json({ ok: true, message: 'All done' });
-  
-  const result = await scrapeProfile(user.uid, BTT_COOKIE, env.DB);
-  await env.DB.prepare('UPDATE users_queue SET scraped = 1, scraped_at = ? WHERE uid = ?').bind(Date.now(), user.uid).run();
-  
-  return Response.json({ ok: true, uid: user.uid, result });
-}
-
-async function scrapeMerits(uid, BTT_COOKIE, db) {
-  const res = await fetch(`https://bitcointalk.org/index.php?action=merit;u=${uid}`, {
-    headers: { 'User-Agent': 'Mozilla/5.0', 'Cookie': BTT_COOKIE }
-  });
-  
-  if (!res.ok) return Response.json({ error: `HTTP ${res.status}` });
-  
-  const html = await res.text();
-  
-  const recvRegex = /(\d+)\s*from\s*<a href="\/index\\.php\\?action=profile;u=(\d+)">([^<]+)<\/a>\s*for\s*<a href="\/index\\.php\\?topic=\d+\.msg(\d+)#msg\d+">([^<]+)<\/a>/gi;
-  const sentRegex = /(\d+)\s*to\s*<a href="\/index\\.php\\?action=profile;u=(\d+)">([^<]+)<\/a>\s*for\s*<a href="\/index\\.php\\?topic=\d+\.msg(\d+)#msg\d+">([^<]+)<\/a>/gi;
-  
-  let rSaved = 0, sSaved = 0, skipped = 0;
-  let match;
-  
-  while ((match = recvRegex.exec(html)) !== null) {
-    const amount = parseInt(match[1]);
-    const from_uid = parseInt(match[2]);
-    const msg_id = parseInt(match[4]);
-    const title = match[5];
-    
-    const exists = await db.prepare('SELECT id FROM merit_events WHERE msg_id = ? AND to_uid = ?').bind(msg_id, uid).first();
-    if (exists) { skipped++; continue; }
-    
-    await db.prepare(
-      'INSERT OR IGNORE INTO merit_events (from_uid, to_uid, amount, msg_id, title, timestamp, collected_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).bind(from_uid, uid, amount, msg_id, title, new Date().toISOString(), Date.now()).run();
-    rSaved++;
-    
-    // Aggiorniamo subito il profilo di chi ha ricevuto il merit
-    await scrapeProfile(uid, BTT_COOKIE, db);
-  }
-  
-  while ((match = sentRegex.exec(html)) !== null) {
-    const amount = parseInt(match[1]);
-    const to_uid = parseInt(match[2]);
-    const msg_id = parseInt(match[4]);
-    const title = match[5];
-    
-    const exists = await db.prepare('SELECT id FROM merit_events WHERE msg_id = ? AND from_uid = ?').bind(msg_id, uid).first();
-    if (exists) { skipped++; continue; }
-    
-    await db.prepare(
-      'INSERT OR IGNORE INTO merit_events (from_uid, to_uid, amount, msg_id, title, timestamp, collected_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).bind(uid, to_uid, amount, msg_id, title, new Date().toISOString(), Date.now()).run();
-    sSaved++;
-    
-    // Aggiorniamo subito il profilo di chi ha inviato il merit
-    await scrapeProfile(uid, BTT_COOKIE, db);
-  }
-  
-  const cutoff = Date.now() - 120 * 86400000;
-  const recv120 = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE to_uid = ? AND collected_at > ?').bind(uid, cutoff).first();
-  const sent120 = await db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM merit_events WHERE from_uid = ? AND collected_at > ?').bind(uid, cutoff).first();
-  
-  // NON aggiorniamo merit_total qui - viene aggiornato solo da scrapeProfile
-  
-  await db.prepare(`
-    UPDATE user_profiles 
-    SET merit_received_120d = ?, 
-        merit_sent_120d = ?,
-        updated_at = ? 
-    WHERE uid = ?
-  `).bind(recv120.total, sent120.total, Date.now(), uid).run();
-  
-  return Response.json({ ok: true, received_saved: rSaved, sent_saved: sSaved, skipped });
-}
-
-async function scrapeProfile(uid, cookie, db) {
-  await new Promise(r => setTimeout(r, 1500));
-  try {
-    const profileRes = await fetch(`https://bitcointalk.org/index.php?action=profile;u=${uid}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Cookie': cookie }
-    });
-    if (!profileRes.ok) return { error: 'Profile not found' };
-    const pHtml = await profileRes.text();
-    
-    const postsMatch = pHtml.match(/<td><b>Posts:\s*<\\/b><\\/td>\s*<td>(\d+)<\\/td>/i);
-    const regMatch = pHtml.match(/<td><b>Date Registered:\s*<\\/b><\\/td>\s*<td>([^<]+)<\\/td>/i);
-    const lastMatch = pHtml.match(/<td><b>Last Active:\s*<\\/b><\\/td>\s*<td[^>]*>([^<]*)<\\/td>/i);
-    const nameMatch = pHtml.match(/<td><b>Name:\s*<\\/b><\\/td>\s*<td>([^<]+)<\\/td>/i);
-    
-    const profile = {
-      uid: uid,
-      username: nameMatch ? nameMatch[1].trim() : null,
-      posts_total: postsMatch ? parseInt(postsMatch[1]) : null,
-      reg_date: regMatch ? regMatch[1].trim() : null,
-      last_active: lastMatch ? lastMatch[1].trim() : null,
-      updated_at: Date.now()
-    };
-    // NON salviamo merit_total dallo scraping - viene calcolato da updateUserStats in brdbscore.js
-    // Questo evita di sovrascrivere i conteggi corretti con dati obsoleti da Bitcointalk
-    const existing = await db.prepare('SELECT uid FROM user_profiles WHERE uid = ?').bind(uid).first();
-    if (existing) {
-      await db.prepare(
-        'UPDATE user_profiles SET username = ?, posts_total = ?, reg_date = ?, last_active = ?, updated_at = ? WHERE uid = ?'
-      ).bind(profile.username, profile.posts_total, profile.reg_date, profile.last_active, profile.updated_at, uid).run();
-    } else {
-      await db.prepare(
-        'INSERT INTO user_profiles (uid, username, posts_total, reg_date, last_active, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
-      ).bind(uid, profile.username, profile.posts_total, profile.reg_date, profile.last_active, profile.updated_at).run();
-    }
-    
-    return profile;
-  } catch (e) { return { error: e.message }; }
-}
