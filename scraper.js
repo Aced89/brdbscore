@@ -115,8 +115,8 @@ export default {
       let btData = { error: 'Failed to scrape' };
       if (profileRes.ok) {
         const pHtml = await profileRes.text();
-        const postsMatch = pHtml.match(/<td><b>Posts:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
-        const nameMatch = pHtml.match(/<td><b>Name:\s*<\/b><\/td>\s*<td>([^<]+)<\/td>/i);
+        const postsMatch = pHtml.match(/<td><b>Posts:\s*<\\/b><\\/td>\s*<td>(\d+)<\\/td>/i);
+        const nameMatch = pHtml.match(/<td><b>Name:\s*<\\/b><\\/td>\s*<td>([^<]+)<\\/td>/i);
         btData = {
           name: nameMatch ? nameMatch[1].trim() : null,
           posts: postsMatch ? parseInt(postsMatch[1]) : null,
@@ -145,26 +145,10 @@ export default {
         db_brdb_users: dbBrdb,
         merit_received_total: meritReceived.total,
         merit_sent_total: meritSent.total,
+        merit_recent: meritRecent.results || [],
         comparison: {
           bt_posts: btData.posts,
           db_posts_total: dbProfile?.posts_total
-        }
-        comparison: {
-          bt_posts: btData.posts,
-          db_posts_total: dbProfile?.posts_total
-        }
-        comparison: {
-          bt_posts: btData.posts,
-          db_posts_total: dbProfile?.posts_total
-        }
-        comparison: {
-          bt_posts: btData.posts,
-          db_posts_total: dbProfile?.posts_total
-        }
-        comparison: {
-          bt_posts: btData.posts,
-          db_posts_total: dbProfile?.posts_total
-        }
         }
       });
     }
@@ -182,8 +166,20 @@ export default {
     
     if (url.pathname === '/profile' && url.searchParams.get('uid')) {
       const uid = url.searchParams.get('uid');
+      const refresh = url.searchParams.get('refresh') === '1' || url.searchParams.get('refresh') === 'true';
+      if (refresh) {
+        const BTT_COOKIE = env.BTT_COOKIE;
+        if (!BTT_COOKIE) return Response.json({ error: 'No cookie' }, { status: 500 });
+        try {
+          // Force a synchronous scrape and DB update before returning
+          await scrapeProfile(uid, BTT_COOKIE, env.DB);
+        } catch (err) {
+          console.error('Forced scrape failed for uid', uid, err?.message || err);
+          // proceed to return whatever is available in DB
+        }
+      }
       const profile = await env.DB.prepare('SELECT * FROM user_profiles WHERE uid = ?').bind(uid).first();
-      if (!profile) return Response.json({ error: 'not found' });
+      if (!profile) return Response.json({ error: 'not found' }, { status: 404 });
       const sent = await env.DB.prepare('SELECT SUM(amount) as total FROM merit_events WHERE from_uid = ?').bind(uid).first();
       const received = await env.DB.prepare('SELECT SUM(amount) as total FROM merit_events WHERE to_uid = ?').bind(uid).first();
       return Response.json({ ...profile, merits_sent_live: sent?.total||0, merits_received_live: received?.total||0 });
@@ -215,8 +211,8 @@ async function scrapeMerits(uid, BTT_COOKIE, db) {
   
   const html = await res.text();
   
-  const recvRegex = /(\d+)\s*from\s*<a href="\/index\.php\?action=profile;u=(\d+)">([^<]+)<\/a>\s*for\s*<a href="\/index\.php\?topic=\d+\.msg(\d+)#msg\d+">([^<]+)<\/a>/gi;
-  const sentRegex = /(\d+)\s*to\s*<a href="\/index\.php\?action=profile;u=(\d+)">([^<]+)<\/a>\s*for\s*<a href="\/index\.php\?topic=\d+\.msg(\d+)#msg\d+">([^<]+)<\/a>/gi;
+  const recvRegex = /(\d+)\s*from\s*<a href="\/index\\.php\\?action=profile;u=(\d+)">([^<]+)<\/a>\s*for\s*<a href="\/index\\.php\\?topic=\d+\.msg(\d+)#msg\d+">([^<]+)<\/a>/gi;
+  const sentRegex = /(\d+)\s*to\s*<a href="\/index\\.php\\?action=profile;u=(\d+)">([^<]+)<\/a>\s*for\s*<a href="\/index\\.php\\?topic=\d+\.msg(\d+)#msg\d+">([^<]+)<\/a>/gi;
   
   let rSaved = 0, sSaved = 0, skipped = 0;
   let match;
@@ -283,10 +279,10 @@ async function scrapeProfile(uid, cookie, db) {
     if (!profileRes.ok) return { error: 'Profile not found' };
     const pHtml = await profileRes.text();
     
-    const postsMatch = pHtml.match(/<td><b>Posts:\s*<\/b><\/td>\s*<td>(\d+)<\/td>/i);
-    const regMatch = pHtml.match(/<td><b>Date Registered:\s*<\/b><\/td>\s*<td>([^<]+)<\/td>/i);
-    const lastMatch = pHtml.match(/<td><b>Last Active:\s*<\/b><\/td>\s*<td[^>]*>([^<]*)<\/td>/i);
-    const nameMatch = pHtml.match(/<td><b>Name:\s*<\/b><\/td>\s*<td>([^<]+)<\/td>/i);
+    const postsMatch = pHtml.match(/<td><b>Posts:\s*<\\/b><\\/td>\s*<td>(\d+)<\\/td>/i);
+    const regMatch = pHtml.match(/<td><b>Date Registered:\s*<\\/b><\\/td>\s*<td>([^<]+)<\\/td>/i);
+    const lastMatch = pHtml.match(/<td><b>Last Active:\s*<\\/b><\\/td>\s*<td[^>]*>([^<]*)<\\/td>/i);
+    const nameMatch = pHtml.match(/<td><b>Name:\s*<\\/b><\\/td>\s*<td>([^<]+)<\\/td>/i);
     
     const profile = {
       uid: uid,
